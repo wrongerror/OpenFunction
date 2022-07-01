@@ -39,7 +39,7 @@ func (r *Gateway) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 
-//+kubebuilder:webhook:path=/mutate-networking-openfunction-io-v1alpha1-gateway,mutating=true,failurePolicy=fail,sideEffects=None,groups=networking.openfunction.io,resources=gateways,verbs=create;update,versions=v1alpha1,name=mgateway.kb.io,admissionReviewVersions={v1,v1beta1}
+//+kubebuilder:webhook:path=/mutate-networking-openfunction-io-v1alpha1-gateway,mutating=true,failurePolicy=fail,sideEffects=None,groups=networking.openfunction.io,resources=gateways,verbs=create;update,versions=v1alpha1,name=mgateway.of.io,admissionReviewVersions={v1,v1beta1}
 
 var _ webhook.Defaulter = &Gateway{}
 
@@ -98,7 +98,7 @@ func (r *Gateway) Default() {
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-//+kubebuilder:webhook:path=/validate-networking-openfunction-io-v1alpha1-gateway,mutating=false,failurePolicy=fail,sideEffects=None,groups=networking.openfunction.io,resources=gateways,verbs=create;update,versions=v1alpha1,name=vgateway.kb.io,admissionReviewVersions={v1,v1beta1}
+//+kubebuilder:webhook:path=/validate-networking-openfunction-io-v1alpha1-gateway,mutating=false,failurePolicy=fail,sideEffects=None,groups=networking.openfunction.io,resources=gateways,verbs=create;update,versions=v1alpha1,name=vgateway.of.io,admissionReviewVersions={v1,v1beta1}
 
 var _ webhook.Validator = &Gateway{}
 
