@@ -15850,6 +15850,32 @@ rules:
   - update
   - watch
 - apiGroups:
+  - networking.openfunction.io
+  resources:
+  - gateways
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.openfunction.io
+  resources:
+  - gateways/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - networking.openfunction.io
+  resources:
+  - gateways/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - serving.knative.dev
   resources:
   - services

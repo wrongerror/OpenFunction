@@ -37,8 +37,10 @@ import (
 	corev1alpha2 "github.com/openfunction/apis/core/v1alpha2"
 	corev1beta1 "github.com/openfunction/apis/core/v1beta1"
 	openfunctionevent "github.com/openfunction/apis/events/v1alpha1"
+	networkingv1alpha1 "github.com/openfunction/apis/networking/v1alpha1"
 	"github.com/openfunction/controllers/core"
 	eventcontrollers "github.com/openfunction/controllers/events"
+	networkingcontrollers "github.com/openfunction/controllers/networking"
 	"github.com/openfunction/pkg/core/builder"
 	"github.com/openfunction/pkg/core/serving"
 	//+kubebuilder:scaffold:imports
@@ -58,6 +60,7 @@ func init() {
 	_ = openfunctionevent.AddToScheme(scheme)
 	_ = shipwrightv1alpha1.AddToScheme(scheme)
 	utilruntime.Must(corev1beta1.AddToScheme(scheme))
+	utilruntime.Must(networkingv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -140,6 +143,17 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Function")
 			os.Exit(1)
 		}
+	}
+	if err = (&networkingcontrollers.GatewayReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Gateway")
+		os.Exit(1)
+	}
+	if err = (&networkingv1alpha1.Gateway{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Gateway")
+		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
