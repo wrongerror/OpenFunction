@@ -20,6 +20,7 @@ import (
 	componentsv1alpha1 "github.com/dapr/dapr/pkg/apis/components/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sgatewayapiv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -47,20 +48,23 @@ func (gr *GitRepo) Init() {
 }
 
 type Language string
+type AddressType string
 
 const (
-	BuildPhase     = "Build"
-	ServingPhase   = "Serving"
-	Created        = "Created"
-	Building       = "Building"
-	Starting       = "Starting"
-	Running        = "Running"
-	Succeeded      = "Succeeded"
-	Failed         = "Failed"
-	Skipped        = "Skipped"
-	Timeout        = "Timeout"
-	Canceled       = "Canceled"
-	UnknownRuntime = "UnknownRuntime"
+	InternalAddressType AddressType = "Internal"
+	ExternalAddressType AddressType = "External"
+	BuildPhase                      = "Build"
+	ServingPhase                    = "Serving"
+	Created                         = "Created"
+	Building                        = "Building"
+	Starting                        = "Starting"
+	Running                         = "Running"
+	Succeeded                       = "Succeeded"
+	Failed                          = "Failed"
+	Skipped                         = "Skipped"
+	Timeout                         = "Timeout"
+	Canceled                        = "Canceled"
+	UnknownRuntime                  = "UnknownRuntime"
 )
 
 type Strategy struct {
@@ -79,6 +83,48 @@ type ShipwrightEngine struct {
 	// +optional
 	// +kubebuilder:validation:Format=duration
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
+}
+
+type GatewayRef struct {
+	// Name is the name of the referent.
+	// It refers to the name of a Gateway resource.
+	//
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+	// Namespace is the namespace of the referent. When unspecified (or empty
+	// string), this refers to the local namespace of the Route.
+	//
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Namespace string `json:"namespace"`
+}
+
+// CommonRouteSpec defines the common attributes that all Routes MUST include
+// within their spec.
+type CommonRouteSpec struct {
+	// GatewayRef references the Gateway resources that a Route wants
+	// to be attached to.
+	//
+	// +optional
+	GatewayRef *GatewayRef `json:"gatewayRef,omitempty"`
+}
+
+type RouteImpl struct {
+	CommonRouteSpec `json:",inline"`
+	// Hostnames defines a set of hostname that should match against the HTTP
+	// Host header to select a HTTPRoute to process the request.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	Hostnames []k8sgatewayapiv1alpha2.Hostname `json:"hostnames,omitempty"`
+	// Rules are a list of HTTP matchers, filters and actions.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:default={{matches: {{path: {type: "PathPrefix", value: "/"}}}}}
+	Rules []k8sgatewayapiv1alpha2.HTTPRouteRule `json:"rules,omitempty"`
 }
 
 type BuildImpl struct {
@@ -191,6 +237,11 @@ type FunctionSpec struct {
 	ImageCredentials *v1.LocalObjectReference `json:"imageCredentials,omitempty"`
 	// The port on which the function will be invoked
 	Port *int32 `json:"port,omitempty"`
+	// Information needed to make HTTPRoute.
+	// Will attempt to make HTTPRoute using the default Gateway resource if Route is nil.
+	//
+	// +optional
+	Route *RouteImpl `json:"route,omitempty"`
 	// Information needed to build a function. The build step will be skipped if Build is nil.
 	Build *BuildImpl `json:"build,omitempty"`
 	// Information needed to run a function. The serving step will be skipped if `Serving` is nil.
@@ -209,14 +260,25 @@ type Condition struct {
 	Service                   string `json:"service,omitempty"`
 }
 
+type FunctionAddress struct {
+	Type  *AddressType `json:"type"`
+	Value string       `json:"value"`
+}
+
+type RouteStatus struct {
+	Hosts      []k8sgatewayapiv1alpha2.Hostname      `json:"hosts,omitempty"`
+	Paths      []k8sgatewayapiv1alpha2.HTTPPathMatch `json:"paths,omitempty"`
+	Conditions []metav1.Condition                    `json:"conditions,omitempty"`
+}
+
 // FunctionStatus defines the observed state of Function
 type FunctionStatus struct {
-	Build   *Condition `json:"build,omitempty"`
-	Serving *Condition `json:"serving,omitempty"`
-	// URL holds the url that used to access the Function.
-	// It generally has the form http://{domain-name}.{domain-namespace}:{domain-port}/{function-namespace}/{function-name}
+	Route   *RouteStatus `json:"route,omitempty"`
+	Build   *Condition   `json:"build,omitempty"`
+	Serving *Condition   `json:"serving,omitempty"`
+	// Addresses holds the addresses that used to access the Function.
 	// +optional
-	URL string `json:"url,omitempty"`
+	Addresses []FunctionAddress `json:"addresses,omitempty"`
 }
 
 //+genclient

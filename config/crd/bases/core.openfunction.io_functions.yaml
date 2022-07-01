@@ -3477,6 +3477,465 @@ spec:
               port:
                 format: int32
                 type: integer
+              route:
+                properties:
+                  hostnames:
+                    items:
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^(\*\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                      type: string
+                    maxItems: 16
+                    type: array
+                  parentRefs:
+                    items:
+                      properties:
+                        name:
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                        namespace:
+                          maxLength: 63
+                          minLength: 1
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                          type: string
+                      required:
+                      - name
+                      - namespace
+                      type: object
+                    maxItems: 32
+                    type: array
+                  rules:
+                    default:
+                    - matches:
+                      - path:
+                          type: PathPrefix
+                          value: /
+                    items:
+                      properties:
+                        backendRefs:
+                          items:
+                            properties:
+                              filters:
+                                items:
+                                  properties:
+                                    extensionRef:
+                                      properties:
+                                        group:
+                                          maxLength: 253
+                                          pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                          type: string
+                                        kind:
+                                          maxLength: 63
+                                          minLength: 1
+                                          pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                                          type: string
+                                        name:
+                                          maxLength: 253
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - group
+                                      - kind
+                                      - name
+                                      type: object
+                                    requestHeaderModifier:
+                                      properties:
+                                        add:
+                                          items:
+                                            properties:
+                                              name:
+                                                maxLength: 256
+                                                minLength: 1
+                                                pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                                                type: string
+                                              value:
+                                                maxLength: 4096
+                                                minLength: 1
+                                                type: string
+                                            required:
+                                            - name
+                                            - value
+                                            type: object
+                                          maxItems: 16
+                                          type: array
+                                          x-kubernetes-list-map-keys:
+                                          - name
+                                          x-kubernetes-list-type: map
+                                        remove:
+                                          items:
+                                            type: string
+                                          maxItems: 16
+                                          type: array
+                                        set:
+                                          items:
+                                            properties:
+                                              name:
+                                                maxLength: 256
+                                                minLength: 1
+                                                pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                                                type: string
+                                              value:
+                                                maxLength: 4096
+                                                minLength: 1
+                                                type: string
+                                            required:
+                                            - name
+                                            - value
+                                            type: object
+                                          maxItems: 16
+                                          type: array
+                                          x-kubernetes-list-map-keys:
+                                          - name
+                                          x-kubernetes-list-type: map
+                                      type: object
+                                    requestMirror:
+                                      properties:
+                                        backendRef:
+                                          properties:
+                                            group:
+                                              default: ""
+                                              maxLength: 253
+                                              pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                              type: string
+                                            kind:
+                                              default: Service
+                                              maxLength: 63
+                                              minLength: 1
+                                              pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                                              type: string
+                                            name:
+                                              maxLength: 253
+                                              minLength: 1
+                                              type: string
+                                            namespace:
+                                              maxLength: 63
+                                              minLength: 1
+                                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                              type: string
+                                            port:
+                                              format: int32
+                                              maximum: 65535
+                                              minimum: 1
+                                              type: integer
+                                          required:
+                                          - name
+                                          type: object
+                                      required:
+                                      - backendRef
+                                      type: object
+                                    requestRedirect:
+                                      properties:
+                                        hostname:
+                                          maxLength: 253
+                                          minLength: 1
+                                          pattern: ^(\*\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                          type: string
+                                        port:
+                                          format: int32
+                                          maximum: 65535
+                                          minimum: 1
+                                          type: integer
+                                        scheme:
+                                          enum:
+                                          - http
+                                          - https
+                                          type: string
+                                        statusCode:
+                                          default: 302
+                                          enum:
+                                          - 301
+                                          - 302
+                                          type: integer
+                                      type: object
+                                    type:
+                                      enum:
+                                      - RequestHeaderModifier
+                                      - RequestMirror
+                                      - RequestRedirect
+                                      - ExtensionRef
+                                      type: string
+                                  required:
+                                  - type
+                                  type: object
+                                maxItems: 16
+                                type: array
+                              group:
+                                default: ""
+                                maxLength: 253
+                                pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                type: string
+                              kind:
+                                default: Service
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                                type: string
+                              name:
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                              namespace:
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                type: string
+                              port:
+                                format: int32
+                                maximum: 65535
+                                minimum: 1
+                                type: integer
+                              weight:
+                                default: 1
+                                format: int32
+                                maximum: 1000000
+                                minimum: 0
+                                type: integer
+                            required:
+                            - name
+                            type: object
+                          maxItems: 16
+                          type: array
+                        filters:
+                          items:
+                            properties:
+                              extensionRef:
+                                properties:
+                                  group:
+                                    maxLength: 253
+                                    pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                    type: string
+                                  kind:
+                                    maxLength: 63
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                                    type: string
+                                  name:
+                                    maxLength: 253
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - group
+                                - kind
+                                - name
+                                type: object
+                              requestHeaderModifier:
+                                properties:
+                                  add:
+                                    items:
+                                      properties:
+                                        name:
+                                          maxLength: 256
+                                          minLength: 1
+                                          pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                                          type: string
+                                        value:
+                                          maxLength: 4096
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - name
+                                      - value
+                                      type: object
+                                    maxItems: 16
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  remove:
+                                    items:
+                                      type: string
+                                    maxItems: 16
+                                    type: array
+                                  set:
+                                    items:
+                                      properties:
+                                        name:
+                                          maxLength: 256
+                                          minLength: 1
+                                          pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                                          type: string
+                                        value:
+                                          maxLength: 4096
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - name
+                                      - value
+                                      type: object
+                                    maxItems: 16
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                type: object
+                              requestMirror:
+                                properties:
+                                  backendRef:
+                                    properties:
+                                      group:
+                                        default: ""
+                                        maxLength: 253
+                                        pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                        type: string
+                                      kind:
+                                        default: Service
+                                        maxLength: 63
+                                        minLength: 1
+                                        pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                                        type: string
+                                      name:
+                                        maxLength: 253
+                                        minLength: 1
+                                        type: string
+                                      namespace:
+                                        maxLength: 63
+                                        minLength: 1
+                                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                        type: string
+                                      port:
+                                        format: int32
+                                        maximum: 65535
+                                        minimum: 1
+                                        type: integer
+                                    required:
+                                    - name
+                                    type: object
+                                required:
+                                - backendRef
+                                type: object
+                              requestRedirect:
+                                properties:
+                                  hostname:
+                                    maxLength: 253
+                                    minLength: 1
+                                    pattern: ^(\*\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                    type: string
+                                  port:
+                                    format: int32
+                                    maximum: 65535
+                                    minimum: 1
+                                    type: integer
+                                  scheme:
+                                    enum:
+                                    - http
+                                    - https
+                                    type: string
+                                  statusCode:
+                                    default: 302
+                                    enum:
+                                    - 301
+                                    - 302
+                                    type: integer
+                                type: object
+                              type:
+                                enum:
+                                - RequestHeaderModifier
+                                - RequestMirror
+                                - RequestRedirect
+                                - ExtensionRef
+                                type: string
+                            required:
+                            - type
+                            type: object
+                          maxItems: 16
+                          type: array
+                        matches:
+                          default:
+                          - path:
+                              type: PathPrefix
+                              value: /
+                          items:
+                            properties:
+                              headers:
+                                items:
+                                  properties:
+                                    name:
+                                      maxLength: 256
+                                      minLength: 1
+                                      pattern: ^[A-Za-z0-9!#$%&'*+\-.^_\x60|~]+$
+                                      type: string
+                                    type:
+                                      default: Exact
+                                      enum:
+                                      - Exact
+                                      - RegularExpression
+                                      type: string
+                                    value:
+                                      maxLength: 4096
+                                      minLength: 1
+                                      type: string
+                                  required:
+                                  - name
+                                  - value
+                                  type: object
+                                maxItems: 16
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              method:
+                                enum:
+                                - GET
+                                - HEAD
+                                - POST
+                                - PUT
+                                - DELETE
+                                - CONNECT
+                                - OPTIONS
+                                - TRACE
+                                - PATCH
+                                type: string
+                              path:
+                                default:
+                                  type: PathPrefix
+                                  value: /
+                                properties:
+                                  type:
+                                    default: PathPrefix
+                                    enum:
+                                    - Exact
+                                    - PathPrefix
+                                    - RegularExpression
+                                    type: string
+                                  value:
+                                    default: /
+                                    maxLength: 1024
+                                    type: string
+                                type: object
+                              queryParams:
+                                items:
+                                  properties:
+                                    name:
+                                      maxLength: 256
+                                      minLength: 1
+                                      type: string
+                                    type:
+                                      default: Exact
+                                      enum:
+                                      - Exact
+                                      - RegularExpression
+                                      type: string
+                                    value:
+                                      maxLength: 1024
+                                      minLength: 1
+                                      type: string
+                                  required:
+                                  - name
+                                  - value
+                                  type: object
+                                maxItems: 16
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                            type: object
+                          maxItems: 8
+                          type: array
+                      type: object
+                    maxItems: 16
+                    type: array
+                type: object
               service:
                 properties:
                   UseStandaloneIngress:
