@@ -18,9 +18,10 @@ package main
 
 import (
 	"flag"
-	networkingcontrollers "github.com/openfunction/controllers/networking"
 	"os"
 	"time"
+
+	networkingcontrollers "github.com/openfunction/controllers/networking"
 
 	componentsv1alpha1 "github.com/dapr/dapr/pkg/apis/components/v1alpha1"
 	kedav1alpha1 "github.com/kedacore/keda/v2/api/v1alpha1"
