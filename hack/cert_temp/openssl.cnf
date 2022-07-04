@@ -1,0 +1,20 @@
+[req]
+req_extensions = v3_req
+distinguished_name = req_distinguished_name
+[req_distinguished_name]
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+extendedKeyUsage = clientAuth, serverAuth
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = openfunction-webhook-service
+DNS.2 = openfunction-webhook-service.openfunction
+DNS.3 = openfunction-webhook-service.openfunction.svc
+DNS.4 = openfunction-webhook-service.openfunction.svc.cluster.local
+DNS.5 = openfunction-webhook-service
+IP.1 = 127.0.0.1
+IP.2 = 192.168.193.10
+IP.3 = 172.31.73.52
+IP.4 = 172.31.73.53
+IP.5 = 172.31.73.54
