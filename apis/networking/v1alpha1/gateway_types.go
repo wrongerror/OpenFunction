@@ -31,7 +31,7 @@ const (
 	HttpRouteLabelKey          = "app.kubernetes.io/managed-by"
 	DefaultHttpListenerName    = "ofn-http-internal"
 	DefaultListenersCount      = 1
-	GatewayListenersAnnotation = "networking.openfunction.io/previous-applied-listeners"
+	GatewayListenersAnnotation = "networking.openfunction.io/inject-listeners"
 )
 
 const (

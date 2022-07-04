@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -89,11 +88,6 @@ func (r *Gateway) Default() {
 			},
 		}
 		r.Spec.GatewaySpec.Listeners = append(r.Spec.GatewaySpec.Listeners, internalHttpListener)
-	}
-
-	if _, ok := r.Annotations[GatewayListenersAnnotation]; !ok && r.Spec.GatewayRef != nil {
-		value, _ := json.Marshal(r.Spec.GatewaySpec.Listeners)
-		r.Annotations[GatewayListenersAnnotation] = string(value)
 	}
 }
 
