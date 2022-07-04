@@ -21,8 +21,6 @@ import (
 	"os"
 	"time"
 
-	networkingcontrollers "github.com/openfunction/controllers/networking"
-
 	componentsv1alpha1 "github.com/dapr/dapr/pkg/apis/components/v1alpha1"
 	kedav1alpha1 "github.com/kedacore/keda/v2/api/v1alpha1"
 	shipwrightv1alpha1 "github.com/shipwright-io/build/pkg/apis/build/v1alpha1"
@@ -35,6 +33,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	k8sgatewayapiv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	corev1alpha2 "github.com/openfunction/apis/core/v1alpha2"
 	corev1beta1 "github.com/openfunction/apis/core/v1beta1"
@@ -42,6 +41,7 @@ import (
 	networkingv1alpha1 "github.com/openfunction/apis/networking/v1alpha1"
 	"github.com/openfunction/controllers/core"
 	eventcontrollers "github.com/openfunction/controllers/events"
+	networkingcontrollers "github.com/openfunction/controllers/networking"
 	"github.com/openfunction/pkg/core/builder"
 	"github.com/openfunction/pkg/core/serving"
 	//+kubebuilder:scaffold:imports
@@ -59,6 +59,7 @@ func init() {
 	_ = componentsv1alpha1.AddToScheme(scheme)
 	_ = kedav1alpha1.AddToScheme(scheme)
 	_ = openfunctionevent.AddToScheme(scheme)
+	_ = k8sgatewayapiv1alpha2.AddToScheme(scheme)
 	_ = networkingv1alpha1.AddToScheme(scheme)
 	_ = shipwrightv1alpha1.AddToScheme(scheme)
 	utilruntime.Must(corev1beta1.AddToScheme(scheme))

@@ -315,7 +315,7 @@ func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.G
 			delete(k8sGateway.Annotations, networkingv1alpha1.GatewayListenersAnnotation)
 			if err := r.Update(r.ctx, k8sGateway); err != nil {
 				log.Error(err, "Failed to clean k8s Gateway",
-					"namespace", gateway.Spec.GatewayDef.Namespace, "name", gateway.Spec.GatewayDef.Name)
+					"namespace", gateway.Spec.GatewayRef.Namespace, "name", gateway.Spec.GatewayRef.Name)
 				return err
 			}
 		} else if !util.IsNotFound(err) {
