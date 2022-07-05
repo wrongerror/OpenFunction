@@ -20,14 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/json"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -83,7 +82,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log := r.Log.WithValues("Gateway", req.NamespacedName)
 	r.ctx = ctx
 
-	var gateway *networkingv1alpha1.Gateway
+	gateway := &networkingv1alpha1.Gateway{}
 
 	if err := r.Get(ctx, req.NamespacedName, gateway); err != nil {
 		if util.IsNotFound(err) {
@@ -98,17 +97,18 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			if err := r.Update(ctx, gateway); err != nil {
 				return ctrl.Result{}, err
 			}
-		} else {
-			if controllerutil.ContainsFinalizer(gateway, GatewayFinalizerName) {
-				if err := r.cleanExternalResources(gateway); err != nil {
-					return ctrl.Result{}, err
-				}
+		}
+	} else {
+		if controllerutil.ContainsFinalizer(gateway, GatewayFinalizerName) {
+			if err := r.cleanExternalResources(gateway); err != nil {
+				return ctrl.Result{}, err
 			}
 			controllerutil.RemoveFinalizer(gateway, GatewayFinalizerName)
 			if err := r.Update(ctx, gateway); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
+		return ctrl.Result{}, nil
 	}
 
 	if err := r.createOrUpdateGateway(gateway); err != nil {
@@ -129,7 +129,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Gateway) error {
 	defer r.saveGatewayStatus(gateway)
 	log := r.Log.WithName("createOrUpdateGateway")
-	var k8sGateway *k8sgatewayapiv1alpha2.Gateway
+	k8sGateway := &k8sgatewayapiv1alpha2.Gateway{}
 
 	if gateway.Spec.GatewayRef != nil {
 		key := client.ObjectKey{Namespace: gateway.Spec.GatewayRef.Namespace, Name: gateway.Spec.GatewayRef.Name}
@@ -144,6 +144,7 @@ func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Ga
 				Type:               string(k8sgatewayapiv1alpha2.GatewayConditionScheduled),
 				Status:             metav1.ConditionFalse,
 				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
 				Reason:             string(reason),
 				Message:            err.Error(),
 			}
@@ -174,6 +175,7 @@ func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Ga
 				Type:               string(k8sgatewayapiv1alpha2.GatewayConditionScheduled),
 				Status:             metav1.ConditionFalse,
 				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
 				Reason:             string(k8sgatewayapiv1alpha2.GatewayReasonNotReconciled),
 				Message:            err.Error(),
 			}
@@ -202,6 +204,7 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 				Type:               string(k8sgatewayapiv1alpha2.GatewayConditionScheduled),
 				Status:             metav1.ConditionFalse,
 				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
 				Reason:             string(networkingv1alpha1.GatewayReasonExists),
 				Message:            err.Error(),
 			}
@@ -233,6 +236,7 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 			Type:               string(k8sgatewayapiv1alpha2.GatewayConditionScheduled),
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: gateway.Generation,
+			LastTransitionTime: metav1.Now(),
 			Reason:             string(networkingv1alpha1.GatewayReasonCreationFailure),
 			Message:            err.Error(),
 		}
@@ -244,6 +248,7 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 		Type:               string(k8sgatewayapiv1alpha2.GatewayConditionScheduled),
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: gateway.Generation,
+		LastTransitionTime: metav1.Now(),
 		Reason:             string(networkingv1alpha1.GatewayReasonResourcesAvailable),
 		Message:            "Deployed k8s gateway to the cluster",
 	}
@@ -283,6 +288,7 @@ func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gate
 			Type:               string(k8sgatewayapiv1alpha2.GatewayConditionScheduled),
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: gateway.Generation,
+			LastTransitionTime: metav1.Now(),
 			Reason:             string(k8sgatewayapiv1alpha2.GatewayReasonNotReconciled),
 			Message:            err.Error(),
 		}
@@ -294,9 +300,9 @@ func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gate
 }
 
 func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.Gateway) error {
-	log := r.Log.WithName("createOrUpdateService")
+	log := r.Log.WithName("cleanExternalResources")
 	if gateway.Spec.GatewayRef != nil {
-		var k8sGateway *k8sgatewayapiv1alpha2.Gateway
+		k8sGateway := &k8sgatewayapiv1alpha2.Gateway{}
 		key := client.ObjectKey{Namespace: gateway.Spec.GatewayRef.Namespace, Name: gateway.Spec.GatewayRef.Name}
 		if err := r.Get(r.ctx, key, k8sGateway); err == nil {
 			var needRemoveListeners []k8sgatewayapiv1alpha2.Listener
@@ -350,10 +356,10 @@ func (r *GatewayReconciler) syncSatusFromK8sGateway(gateway *networkingv1alpha1.
 
 func (r *GatewayReconciler) createOrUpdateService(gateway *networkingv1alpha1.Gateway) error {
 	log := r.Log.WithName("createOrUpdateService")
-	service := corev1.Service{
+	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Namespace: gateway.Namespace, Name: GatewayServiceName},
 	}
-	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, &service, r.mutateService(gateway, service))
+	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, service, r.mutateService(gateway, service))
 	if err != nil {
 		log.Error(err, "Failed to CreateOrUpdate service")
 		return err
@@ -362,19 +368,21 @@ func (r *GatewayReconciler) createOrUpdateService(gateway *networkingv1alpha1.Ga
 	return nil
 }
 
-func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, service corev1.Service) controllerutil.MutateFn {
+func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, service *corev1.Service) controllerutil.MutateFn {
 	return func() error {
 		if r.k8sGateway != nil {
 			var servicePorts []corev1.ServicePort
 			var externalName string
 			for _, listener := range gateway.Spec.GatewaySpec.Listeners {
-				servicePort := corev1.ServicePort{
-					Name:       string(listener.Name),
-					Protocol:   corev1.Protocol(listener.Protocol),
-					Port:       int32(listener.Port),
-					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: int32(listener.Port)},
+				if string(*listener.Hostname) != fmt.Sprintf("*.%s", gateway.Spec.ClusterDomain) {
+					servicePort := corev1.ServicePort{
+						Name:       string(listener.Name),
+						Protocol:   corev1.ProtocolTCP,
+						Port:       int32(listener.Port),
+						TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: int32(listener.Port)},
+					}
+					servicePorts = append(servicePorts, servicePort)
 				}
-				servicePorts = append(servicePorts, servicePort)
 			}
 			if networkingv1alpha1.GatewayCompatibilities[string(r.k8sGateway.Spec.GatewayClassName)]["implementedAddresses"] {
 				externalName = fmt.Sprintf("%s.%s.svc.%s",
@@ -386,7 +394,7 @@ func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, s
 			service.Spec.Type = corev1.ServiceTypeExternalName
 			service.Spec.Ports = servicePorts
 			service.Spec.ExternalName = externalName
-			return ctrl.SetControllerReference(gateway, &service, r.Scheme)
+			return ctrl.SetControllerReference(gateway, service, r.Scheme)
 		}
 		return nil
 	}
@@ -395,16 +403,15 @@ func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, s
 func (r *GatewayReconciler) saveGatewayStatus(gateway *networkingv1alpha1.Gateway) {
 	log := r.Log.WithName("saveGatewayStatus")
 	if err := r.Status().Update(r.ctx, gateway); err != nil {
-		log.Error(err, "Failed to update status on Gateway",
-			"namespace", gateway.Namespace,
-			"name", gateway.Name)
+		log.Error(err, "Failed to update status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
 	} else {
-		log.Info("Updated status on Gateway", "resource version", gateway.ResourceVersion)
+		log.Info("Updated status on Gateway", "namespace", gateway.Namespace,
+			"name", gateway.Name, "resource version", gateway.ResourceVersion)
 	}
 }
 
 func convertListenersListToMapping(listeners []k8sgatewayapiv1alpha2.Listener) map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener {
-	var mapping map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener
+	mapping := make(map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener)
 	for _, listener := range listeners {
 		mapping[listener.Name] = listener
 	}

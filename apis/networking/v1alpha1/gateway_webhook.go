@@ -63,24 +63,34 @@ func (r *Gateway) Default() {
 	}
 
 	needInjectDefaultListeners := true
-	for _, listener := range r.Spec.GatewaySpec.Listeners {
+	for index, listener := range r.Spec.GatewaySpec.Listeners {
 		if listener.Name == DefaultHttpListenerName {
 			needInjectDefaultListeners = false
+			internalHostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*.%s", r.Spec.ClusterDomain))
+			namespaceFromAll := k8sgatewayapiv1alpha2.NamespacesFromAll
+			listener.Hostname = &internalHostname
+			listener.Port = 80
+			listener.Protocol = "HTTP"
+			listener.AllowedRoutes = &k8sgatewayapiv1alpha2.AllowedRoutes{
+				Namespaces: &k8sgatewayapiv1alpha2.RouteNamespaces{
+					From: &namespaceFromAll,
+				},
+			}
 		} else {
-			hostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*%s", r.Spec.Domain))
+			hostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*.%s", r.Spec.Domain))
 			listener.Hostname = &hostname
 		}
+		r.Spec.GatewaySpec.Listeners[index] = listener
 	}
 
 	if needInjectDefaultListeners {
-		internalHostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*%s", r.Spec.ClusterDomain))
+		internalHostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*.%s", r.Spec.ClusterDomain))
 		namespaceFromAll := k8sgatewayapiv1alpha2.NamespacesFromAll
 		internalHttpListener := k8sgatewayapiv1alpha2.Listener{
 			Name:     DefaultHttpListenerName,
 			Hostname: &internalHostname,
 			Port:     80,
 			Protocol: "HTTP",
-			TLS:      nil,
 			AllowedRoutes: &k8sgatewayapiv1alpha2.AllowedRoutes{
 				Namespaces: &k8sgatewayapiv1alpha2.RouteNamespaces{
 					From: &namespaceFromAll,
