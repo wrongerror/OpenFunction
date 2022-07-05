@@ -334,10 +334,10 @@ func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.G
 }
 
 func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.Gateway) bool {
-	sourceListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
-	targetListeners := convertListenersListToMapping(r.k8sGateway.Spec.Listeners)
-	for name, sourceListener := range sourceListeners {
-		if targetListener, ok := targetListeners[name]; !ok || !reflect.DeepEqual(sourceListener, targetListener) {
+	gatewayListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+	k8sGatewayListeners := convertListenersListToMapping(r.k8sGateway.Spec.Listeners)
+	for name, gatewayListener := range gatewayListeners {
+		if k8sGatewayListener, ok := k8sGatewayListeners[name]; !ok || !reflect.DeepEqual(gatewayListener, k8sGatewayListener) {
 			return true
 		}
 	}
@@ -347,6 +347,12 @@ func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.
 func (r *GatewayReconciler) syncSatusFromK8sGateway(gateway *networkingv1alpha1.Gateway) error {
 	if r.k8sGateway != nil {
 		gateway.Status.Conditions = r.k8sGateway.Status.Conditions
+		gatewayListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+		for _, gatewayListener := range r.k8sGateway.Status.Listeners {
+			if _, ok := gatewayListeners[gatewayListener.Name]; ok {
+				gateway.Status.Listeners = append(gateway.Status.Listeners, gatewayListener)
+			}
+		}
 		gateway.Status.Listeners = r.k8sGateway.Status.Listeners
 		gateway.Status.Addresses = r.k8sGateway.Status.Addresses
 		r.saveGatewayStatus(gateway)
