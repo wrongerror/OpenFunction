@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/fields"
@@ -27,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/json"
-	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -51,7 +52,8 @@ const (
 	ContourGatewayClassName   = "contour"
 	ContourGatewayServiceName = "envoy"
 	GatewayFinalizerName      = "networking.openfunction.io/finalizer"
-	GatewayRefIndexField      = ".spec.gatewayRef.Index"
+	GatewayIndexField         = ".spec.gatewayRef.Index"
+	K8sGatewayIndexField      = ".spec.gatewayClassName"
 )
 
 // GatewayReconciler reconciles a Gateway object
@@ -113,7 +115,6 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	existingStatus := gateway.Status.DeepCopy()
 	if err := r.createOrUpdateGateway(gateway); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -126,16 +127,11 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if !equality.Semantic.DeepEqual(existingStatus, gateway.Status) {
-		if err := r.updateGatewayStatus(gateway); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
 	return ctrl.Result{}, nil
 }
 
 func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Gateway) error {
+	defer r.updateGatewayStatus(gateway.DeepCopy(), gateway)
 	log := r.Log.WithName("createOrUpdateGateway")
 	k8sGateway := &k8sgatewayapiv1alpha2.Gateway{}
 
@@ -200,7 +196,10 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 	gatewayClassName := gateway.Spec.GatewayDef.GatewayClassName
 	if !networkingv1alpha1.GatewayCompatibilities[string(gatewayClassName)]["allowMultipleGateway"] {
 		k8sGateways := k8sgatewayapiv1alpha2.GatewayList{}
-		if err := r.List(r.ctx, &k8sGateways, client.MatchingFields{"gatewayClassName": string(gatewayClassName)}); err != nil {
+		listOps := &client.ListOptions{
+			FieldSelector: fields.OneTermEqualSelector(K8sGatewayIndexField, string(gatewayClassName)),
+		}
+		if err := r.List(r.ctx, &k8sGateways, listOps); err != nil {
 			log.Error(err, "Failed to list k8s Gateway", "gatewayClassName", gatewayClassName)
 			return err
 		}
@@ -346,9 +345,11 @@ func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.G
 
 	if gateway.Spec.GatewayDef != nil && r.k8sGateway != nil {
 		if err := r.Delete(r.ctx, r.k8sGateway); err != nil {
-			log.Error(err, "Failed to clean k8s Gateway",
-				"namespace", gateway.Spec.GatewayDef.Namespace, "name", gateway.Spec.GatewayDef.Name)
-			return err
+			if !util.IsNotFound(err) {
+				log.Error(err, "Failed to clean k8s Gateway",
+					"namespace", gateway.Spec.GatewayDef.Namespace, "name", gateway.Spec.GatewayDef.Name)
+			}
+			return util.IgnoreNotFound(err)
 		}
 	}
 	return nil
@@ -438,15 +439,15 @@ func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, s
 	}
 }
 
-func (r *GatewayReconciler) updateGatewayStatus(gateway *networkingv1alpha1.Gateway) error {
+func (r *GatewayReconciler) updateGatewayStatus(oldGateway *networkingv1alpha1.Gateway, gateway *networkingv1alpha1.Gateway) {
 	log := r.Log.WithName("updateGatewayStatus")
-	if err := r.Status().Update(r.ctx, gateway); err != nil {
-		log.Error(err, "Failed to update status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
-		return err
+	if !equality.Semantic.DeepEqual(oldGateway.Status, gateway.Status) {
+		if err := r.Status().Update(r.ctx, gateway); err != nil {
+			log.Error(err, "Failed to update status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
+		}
+		log.Info("Updated status on Gateway", "namespace", gateway.Namespace,
+			"name", gateway.Name, "resource version", gateway.ResourceVersion)
 	}
-	log.Info("Updated status on Gateway", "namespace", gateway.Namespace,
-		"name", gateway.Name, "resource version", gateway.ResourceVersion)
-	return nil
 }
 
 func convertListenersListToMapping(listeners []k8sgatewayapiv1alpha2.Listener) map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener {
@@ -467,7 +468,7 @@ func convertListenersMappingToList(mapping map[k8sgatewayapiv1alpha2.SectionName
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &networkingv1alpha1.Gateway{}, GatewayRefIndexField, func(rawObj client.Object) []string {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &networkingv1alpha1.Gateway{}, GatewayIndexField, func(rawObj client.Object) []string {
 		gateway := rawObj.(*networkingv1alpha1.Gateway)
 		if gateway.Spec.GatewayRef != nil {
 			return []string{fmt.Sprintf("%s,%s", gateway.Spec.GatewayRef.Namespace, gateway.Spec.GatewayRef.Name)}
@@ -476,6 +477,13 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return []string{fmt.Sprintf("%s,%s", gateway.Spec.GatewayDef.Namespace, gateway.Spec.GatewayDef.Name)}
 		}
 		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &k8sgatewayapiv1alpha2.Gateway{}, K8sGatewayIndexField, func(rawObj client.Object) []string {
+		k8sGateway := rawObj.(*k8sgatewayapiv1alpha2.Gateway)
+		return []string{string(k8sGateway.Spec.GatewayClassName)}
 	}); err != nil {
 		return err
 	}
@@ -492,7 +500,7 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *GatewayReconciler) findObjectsForK8sGateway(k8sGateway client.Object) []reconcile.Request {
 	attachedGateways := &networkingv1alpha1.GatewayList{}
 	listOps := &client.ListOptions{
-		FieldSelector: fields.OneTermEqualSelector(GatewayRefIndexField, fmt.Sprintf("%s,%s", k8sGateway.GetNamespace(), k8sGateway.GetName())),
+		FieldSelector: fields.OneTermEqualSelector(GatewayIndexField, fmt.Sprintf("%s,%s", k8sGateway.GetNamespace(), k8sGateway.GetName())),
 	}
 	err := r.List(context.TODO(), attachedGateways, listOps)
 	if err != nil {
