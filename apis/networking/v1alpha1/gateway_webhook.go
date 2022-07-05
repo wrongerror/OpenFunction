@@ -62,6 +62,10 @@ func (r *Gateway) Default() {
 		r.Spec.HttpRouteLabelKey = HttpRouteLabelKey
 	}
 
+	if r.Spec.GatewayDef.Name == "" {
+		r.Spec.GatewayDef.Name = r.GetName()
+	}
+
 	needInjectDefaultListeners := true
 	for index, listener := range r.Spec.GatewaySpec.Listeners {
 		if listener.Name == DefaultHttpListenerName {

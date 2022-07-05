@@ -232,10 +232,12 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 			Listeners:        gateway.Spec.GatewaySpec.Listeners,
 		},
 	}
-	k8sGateway.SetOwnerReferences(nil)
-	if err := ctrl.SetControllerReference(gateway, k8sGateway, r.Scheme); err != nil {
-		log.Error(err, "Failed to SetOwnerReferences for k8s Gateway")
-		return err
+
+	listenersAnnotation, _ := json.Marshal(gateway.Spec.GatewaySpec.Listeners)
+	if r.k8sGateway.Annotations != nil {
+		r.k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation] = string(listenersAnnotation)
+	} else {
+		r.k8sGateway.Annotations = map[string]string{networkingv1alpha1.GatewayListenersAnnotation: string(listenersAnnotation)}
 	}
 	if err := r.Create(r.ctx, k8sGateway); err != nil {
 		log.Error(err, "Failed to create k8s Gateway",
@@ -288,7 +290,12 @@ func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gate
 	k8sGatewayListeners := convertListenersMappingToList(k8sGatewayListenersMapping)
 	r.k8sGateway.Spec.Listeners = k8sGatewayListeners
 	listenersAnnotation, _ := json.Marshal(gateway.Spec.GatewaySpec.Listeners)
-	r.k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation] = string(listenersAnnotation)
+	if r.k8sGateway.Annotations != nil {
+		r.k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation] = string(listenersAnnotation)
+	} else {
+		r.k8sGateway.Annotations = map[string]string{networkingv1alpha1.GatewayListenersAnnotation: string(listenersAnnotation)}
+	}
+
 	if err := r.Update(r.ctx, r.k8sGateway); err != nil {
 		log.Error(err, "Failed to reconcile k8s Gateway",
 			"namespace", gateway.Spec.GatewayRef.Namespace, "name", gateway.Spec.GatewayRef.Name)
@@ -312,28 +319,37 @@ func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.G
 	if gateway.Spec.GatewayRef != nil {
 		k8sGateway := &k8sgatewayapiv1alpha2.Gateway{}
 		key := client.ObjectKey{Namespace: gateway.Spec.GatewayRef.Namespace, Name: gateway.Spec.GatewayRef.Name}
-		if err := r.Get(r.ctx, key, k8sGateway); err == nil {
-			var needRemoveListeners []k8sgatewayapiv1alpha2.Listener
-			gatewayListenersAnnotation := []byte(k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation])
-			if err := json.Unmarshal(gatewayListenersAnnotation, &needRemoveListeners); err != nil {
-				return nil
-			}
-			needRemoveListenersMapping := convertListenersListToMapping(needRemoveListeners)
-			k8sGatewayListenersMapping := convertListenersListToMapping(k8sGateway.Spec.Listeners)
-			for name := range needRemoveListenersMapping {
-				delete(k8sGatewayListenersMapping, name)
-			}
-			k8sGatewayListeners := convertListenersMappingToList(k8sGatewayListenersMapping)
-			k8sGateway.Spec.Listeners = k8sGatewayListeners
-			delete(k8sGateway.Annotations, networkingv1alpha1.GatewayListenersAnnotation)
-			if err := r.Update(r.ctx, k8sGateway); err != nil {
-				log.Error(err, "Failed to clean k8s Gateway",
+		if err := r.Get(r.ctx, key, k8sGateway); err != nil {
+			if !util.IsNotFound(err) {
+				log.Error(err, "Failed to get k8s gateway",
 					"namespace", gateway.Spec.GatewayRef.Namespace, "name", gateway.Spec.GatewayRef.Name)
-				return err
 			}
-		} else if !util.IsNotFound(err) {
-			log.Error(err, "Failed to get k8s gateway",
+			return util.IgnoreNotFound(err)
+		}
+		var needRemoveListeners []k8sgatewayapiv1alpha2.Listener
+		gatewayListenersAnnotation := []byte(k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation])
+		if err := json.Unmarshal(gatewayListenersAnnotation, &needRemoveListeners); err != nil {
+			return nil
+		}
+		needRemoveListenersMapping := convertListenersListToMapping(needRemoveListeners)
+		k8sGatewayListenersMapping := convertListenersListToMapping(k8sGateway.Spec.Listeners)
+		for name := range needRemoveListenersMapping {
+			delete(k8sGatewayListenersMapping, name)
+		}
+		k8sGatewayListeners := convertListenersMappingToList(k8sGatewayListenersMapping)
+		k8sGateway.Spec.Listeners = k8sGatewayListeners
+		delete(k8sGateway.Annotations, networkingv1alpha1.GatewayListenersAnnotation)
+		if err := r.Update(r.ctx, k8sGateway); err != nil {
+			log.Error(err, "Failed to clean k8s Gateway",
 				"namespace", gateway.Spec.GatewayRef.Namespace, "name", gateway.Spec.GatewayRef.Name)
+			return err
+		}
+	}
+
+	if gateway.Spec.GatewayDef != nil && r.k8sGateway != nil {
+		if err := r.Delete(r.ctx, r.k8sGateway); err != nil {
+			log.Error(err, "Failed to clean k8s Gateway",
+				"namespace", gateway.Spec.GatewayDef.Namespace, "name", gateway.Spec.GatewayDef.Name)
 			return err
 		}
 	}
@@ -452,10 +468,13 @@ func convertListenersMappingToList(mapping map[k8sgatewayapiv1alpha2.SectionName
 func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &networkingv1alpha1.Gateway{}, GatewayRefIndexField, func(rawObj client.Object) []string {
 		gateway := rawObj.(*networkingv1alpha1.Gateway)
-		if gateway.Spec.GatewayRef == nil {
-			return nil
+		if gateway.Spec.GatewayRef != nil {
+			return []string{fmt.Sprintf("%s,%s", gateway.Spec.GatewayRef.Namespace, gateway.Spec.GatewayRef.Name)}
 		}
-		return []string{fmt.Sprintf("%s,%s", gateway.Spec.GatewayRef.Namespace, gateway.Spec.GatewayRef.Name)}
+		if gateway.Spec.GatewayDef != nil {
+			return []string{fmt.Sprintf("%s,%s", gateway.Spec.GatewayDef.Namespace, gateway.Spec.GatewayDef.Name)}
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
