@@ -298,7 +298,7 @@ func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gate
 
 	if err := r.Update(r.ctx, r.k8sGateway); err != nil {
 		log.Error(err, "Failed to reconcile k8s Gateway",
-			"namespace", gateway.Spec.GatewayRef.Namespace, "name", gateway.Spec.GatewayRef.Name)
+			"namespace", r.k8sGateway.Namespace, "name", r.k8sGateway.Name)
 		condition := metav1.Condition{
 			Type:               string(k8sgatewayapiv1alpha2.GatewayConditionScheduled),
 			Status:             metav1.ConditionFalse,
