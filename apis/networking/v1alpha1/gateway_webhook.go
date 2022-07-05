@@ -62,7 +62,7 @@ func (r *Gateway) Default() {
 		r.Spec.HttpRouteLabelKey = HttpRouteLabelKey
 	}
 
-	if r.Spec.GatewayDef.Name == "" {
+	if r.Spec.GatewayDef != nil && r.Spec.GatewayDef.Name == "" {
 		r.Spec.GatewayDef.Name = r.GetName()
 	}
 
