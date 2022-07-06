@@ -119,10 +119,6 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if err := r.syncStatusFromK8sGateway(gateway); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	if err := r.createOrUpdateService(gateway); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -131,7 +127,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Gateway) error {
-	defer r.updateGatewayStatus(gateway.DeepCopy(), gateway)
+	defer r.updateGatewayStatus(gateway.Status.DeepCopy(), gateway)
 	log := r.Log.WithName("createOrUpdateGateway")
 	k8sGateway := &k8sgatewayapiv1alpha2.Gateway{}
 
@@ -158,7 +154,9 @@ func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Ga
 		} else {
 			r.k8sGateway = k8sGateway
 			if r.needReconcileK8sGateway(gateway) {
-				return r.reconcileK8sGateway(gateway)
+				if err := r.reconcileK8sGateway(gateway); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -168,10 +166,14 @@ func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Ga
 		if err := r.Get(r.ctx, key, k8sGateway); err == nil {
 			r.k8sGateway = k8sGateway
 			if r.needReconcileK8sGateway(gateway) {
-				return r.reconcileK8sGateway(gateway)
+				if err := r.reconcileK8sGateway(gateway); err != nil {
+					return err
+				}
 			}
 		} else if util.IsNotFound(err) {
-			return r.createK8sGateway(gateway)
+			if err := r.createK8sGateway(gateway); err != nil {
+				return err
+			}
 		} else {
 			log.Error(err, "Failed to reconcile k8s Gateway",
 				"namespace", gateway.Spec.GatewayDef.Namespace, "name", gateway.Spec.GatewayDef.Name)
@@ -188,6 +190,11 @@ func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Ga
 			return err
 		}
 	}
+
+	if r.k8sGateway != nil {
+		r.syncStatusFromK8sGateway(gateway)
+	}
+
 	return nil
 }
 
@@ -377,20 +384,18 @@ func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.
 	return false
 }
 
-func (r *GatewayReconciler) syncStatusFromK8sGateway(gateway *networkingv1alpha1.Gateway) error {
-	if r.k8sGateway != nil {
-		gateway.Status.Conditions = r.k8sGateway.Status.Conditions
-		gatewayListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
-		var refreshedGatewayListeners []k8sgatewayapiv1alpha2.ListenerStatus
-		for _, gatewayListener := range r.k8sGateway.Status.Listeners {
-			if _, ok := gatewayListeners[gatewayListener.Name]; ok {
-				refreshedGatewayListeners = append(refreshedGatewayListeners, gatewayListener)
-			}
+func (r *GatewayReconciler) syncStatusFromK8sGateway(gateway *networkingv1alpha1.Gateway) {
+	gateway.Status.Conditions = r.k8sGateway.Status.Conditions
+	gatewayListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+	var refreshedGatewayListeners []k8sgatewayapiv1alpha2.ListenerStatus
+	for _, gatewayListener := range r.k8sGateway.Status.Listeners {
+		if _, ok := gatewayListeners[gatewayListener.Name]; ok {
+			refreshedGatewayListeners = append(refreshedGatewayListeners, gatewayListener)
 		}
-		gateway.Status.Listeners = refreshedGatewayListeners
-		gateway.Status.Addresses = r.k8sGateway.Status.Addresses
 	}
-	return nil
+	gateway.Status.Listeners = refreshedGatewayListeners
+	gateway.Status.Addresses = r.k8sGateway.Status.Addresses
+
 }
 
 func (r *GatewayReconciler) createOrUpdateService(gateway *networkingv1alpha1.Gateway) error {
@@ -439,9 +444,9 @@ func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, s
 	}
 }
 
-func (r *GatewayReconciler) updateGatewayStatus(oldGateway *networkingv1alpha1.Gateway, gateway *networkingv1alpha1.Gateway) {
+func (r *GatewayReconciler) updateGatewayStatus(oldStatus *networkingv1alpha1.GatewayStatus, gateway *networkingv1alpha1.Gateway) {
 	log := r.Log.WithName("updateGatewayStatus")
-	if !equality.Semantic.DeepEqual(oldGateway.Status, gateway.Status) {
+	if !equality.Semantic.DeepEqual(oldStatus, gateway.Status) {
 		if err := r.Status().Update(r.ctx, gateway); err != nil {
 			log.Error(err, "Failed to update status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
 		}

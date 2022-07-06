@@ -169,6 +169,7 @@ type GatewayStatus struct {
 }
 
 //+kubebuilder:object:root=true
+//+kubebuilder:storageversion
 //+kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Address",type=string,JSONPath=`.status.addresses[*].value`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
