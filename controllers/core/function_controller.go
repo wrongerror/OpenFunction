@@ -17,9 +17,22 @@ limitations under the License.
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"net/url"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 	"sort"
+	"strings"
+	"text/template"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -30,8 +43,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	k8sgatewayapiv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	openfunction "github.com/openfunction/apis/core/v1beta1"
+	networkingv1alpha1 "github.com/openfunction/apis/networking/v1alpha1"
 	"github.com/openfunction/pkg/constants"
 	"github.com/openfunction/pkg/util"
 )
@@ -107,6 +122,10 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if err := r.createOrUpdateService(&fn); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.createOrUpdateHTTPRoute(&fn); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -634,6 +653,219 @@ func (r *FunctionReconciler) needToCreateServing(fn *openfunction.Function) bool
 	return false
 }
 
+func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) error {
+	log := r.Log.WithName("createOrUpdateHTTPRoute")
+
+	if fn.Status.Serving == nil ||
+		fn.Status.Serving.State != openfunction.Running ||
+		fn.Status.Serving.Service == "" {
+		return nil
+	}
+
+	gateway := &networkingv1alpha1.Gateway{}
+	key := client.ObjectKey{
+		Namespace: string(*fn.Spec.Route.GatewayRef.Namespace),
+		Name:      string(fn.Spec.Route.GatewayRef.Name),
+	}
+	if err := r.Get(r.ctx, key, gateway); err != nil {
+		log.Error(err, "Failed to get gateway",
+			"namespace", fn.Spec.Route.GatewayRef.Namespace, "name", fn.Spec.Route.GatewayRef.Name)
+		return err
+	}
+
+	httpRoute := &k8sgatewayapiv1alpha2.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Namespace: fn.Namespace, Name: fn.Name},
+		Spec: k8sgatewayapiv1alpha2.HTTPRouteSpec{
+			CommonRouteSpec: k8sgatewayapiv1alpha2.CommonRouteSpec{
+				ParentRefs: []k8sgatewayapiv1alpha2.ParentRef{
+					{Namespace: fn.Spec.Route.GatewayRef.Namespace, Name: fn.Spec.Route.GatewayRef.Name},
+				},
+			},
+			Hostnames: []k8sgatewayapiv1alpha2.Hostname{},
+			Rules:     []k8sgatewayapiv1alpha2.HTTPRouteRule{},
+		},
+	}
+	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, httpRoute, r.mutateHTTPRoute(fn, gateway, httpRoute))
+	if err != nil {
+		log.Error(err, "Failed to CreateOrUpdate HTTPRoute")
+		return err
+	}
+	log.V(1).Info(fmt.Sprintf("HTTPRoute %s", op))
+
+	r.updateFuncWithHTTPRouteStatus(fn, gateway, httpRoute)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Namespace: fn.Namespace, Name: fn.Name},
+	}
+	op, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, service, r.mutateService(fn, gateway, httpRoute, service))
+	if err != nil {
+		log.Error(err, "Failed to CreateOrUpdate service")
+		return err
+	}
+	log.V(1).Info(fmt.Sprintf("service %s", op))
+
+	return nil
+}
+
+func (r *FunctionReconciler) mutateHTTPRoute(
+	fn *openfunction.Function,
+	gateway *networkingv1alpha1.Gateway,
+	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute) controllerutil.MutateFn {
+	return func() error {
+		var clusterHostname = k8sgatewayapiv1alpha2.Hostname(
+			fmt.Sprintf("%s.%s.%s", fn.Name, fn.Namespace, gateway.Spec.ClusterDomain))
+		var hostnames []k8sgatewayapiv1alpha2.Hostname
+		var rules []k8sgatewayapiv1alpha2.HTTPRouteRule
+		var port = k8sgatewayapiv1alpha2.PortNumber(*fn.Spec.Port)
+		var namespace = k8sgatewayapiv1alpha2.Namespace(fn.Namespace)
+
+		if fn.Spec.Route.Hostnames == nil {
+			var hostnameBuffer bytes.Buffer
+
+			hostTemplate := template.Must(template.New("host").Parse(gateway.Spec.HostTemplate))
+			hostInfoObj := struct {
+				Name      string
+				Namespace string
+				Domain    string
+			}{Name: fn.Name, Namespace: fn.Namespace, Domain: gateway.Spec.Domain}
+			if err := hostTemplate.Execute(&hostnameBuffer, hostInfoObj); err != nil {
+				return err
+			}
+			hostname := k8sgatewayapiv1alpha2.Hostname(hostnameBuffer.String())
+			hostnames = append(hostnames, hostname)
+		}
+		if !containsHTTPHostname(fn.Spec.Route.Hostnames, clusterHostname) {
+			hostnames = append(hostnames, clusterHostname)
+		}
+
+		if fn.Spec.Route.Rules == nil {
+			var pathBuffer bytes.Buffer
+			pathTemplate := template.Must(template.New("path").Parse(gateway.Spec.PathTemplate))
+			pathInfoObj := struct {
+				Name      string
+				Namespace string
+			}{Name: fn.Name, Namespace: fn.Namespace}
+			if err := pathTemplate.Execute(&pathBuffer, pathInfoObj); err != nil {
+				return err
+			}
+			path := pathBuffer.String()
+			matchType := k8sgatewayapiv1alpha2.PathMatchPathPrefix
+			rule := k8sgatewayapiv1alpha2.HTTPRouteRule{
+				Matches: []k8sgatewayapiv1alpha2.HTTPRouteMatch{{
+					Path: &k8sgatewayapiv1alpha2.HTTPPathMatch{Type: &matchType, Value: &path},
+				}},
+				BackendRefs: []k8sgatewayapiv1alpha2.HTTPBackendRef{
+					{
+						BackendRef: k8sgatewayapiv1alpha2.BackendRef{
+							BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
+								Name:      k8sgatewayapiv1alpha2.ObjectName(fn.Status.Serving.Service),
+								Namespace: &namespace,
+								Port:      &port,
+							},
+						},
+					},
+				},
+			}
+			rules = append(rules, rule)
+		} else {
+			for _, rule := range fn.Spec.Route.Rules {
+				rule.BackendRefs = []k8sgatewayapiv1alpha2.HTTPBackendRef{
+					{
+						BackendRef: k8sgatewayapiv1alpha2.BackendRef{
+							BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
+								Name:      k8sgatewayapiv1alpha2.ObjectName(fn.Status.Serving.Service),
+								Namespace: &namespace,
+								Port:      &port,
+							},
+						},
+					},
+				}
+			}
+		}
+		httpRoute.Spec.Hostnames = append(httpRoute.Spec.Hostnames, hostnames...)
+		httpRoute.Spec.Rules = append(httpRoute.Spec.Rules, rules...)
+		return ctrl.SetControllerReference(fn, httpRoute, r.Scheme)
+	}
+}
+
+func (r *FunctionReconciler) mutateService(
+	fn *openfunction.Function,
+	gateway *networkingv1alpha1.Gateway,
+	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute,
+	service *corev1.Service) controllerutil.MutateFn {
+	return func() error {
+		var servicePorts []corev1.ServicePort
+		var externalName string
+		for _, listener := range gateway.Spec.GatewaySpec.Listeners {
+			if strings.HasSuffix(string(*listener.Hostname), gateway.Spec.ClusterDomain) {
+				servicePort := corev1.ServicePort{
+					Name:       string(listener.Name),
+					Protocol:   corev1.ProtocolTCP,
+					Port:       int32(listener.Port),
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: int32(listener.Port)},
+				}
+				servicePorts = append(servicePorts, servicePort)
+			}
+		}
+		for _, hostname := range httpRoute.Spec.Hostnames {
+			if strings.HasSuffix(string(hostname), gateway.Spec.ClusterDomain) {
+				externalName = string(hostname)
+				break
+			}
+		}
+		service.Spec.Type = corev1.ServiceTypeExternalName
+		service.Spec.Ports = servicePorts
+		service.Spec.ExternalName = externalName
+		return ctrl.SetControllerReference(fn, service, r.Scheme)
+	}
+}
+
+func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
+	fn *openfunction.Function,
+	gateway *networkingv1alpha1.Gateway,
+	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute) {
+	log := r.Log.WithName("updateFuncWithHTTPRouteStatus")
+	var addresses []openfunction.FunctionAddress
+	var paths []k8sgatewayapiv1alpha2.HTTPPathMatch
+	var oldRouteStatus = fn.Status.Route.DeepCopy()
+	fn.Status.Route.Conditions = httpRoute.Status.Parents[0].Conditions
+	fn.Status.Route.Hosts = httpRoute.Spec.Hostnames
+	for _, httpRule := range httpRoute.Spec.Rules {
+		for _, match := range httpRule.Matches {
+			paths = append(paths, *match.Path)
+		}
+	}
+	fn.Status.Route.Paths = paths
+	for _, hostname := range httpRoute.Spec.Hostnames {
+		var addressType openfunction.AddressType
+		if strings.HasSuffix(string(hostname), gateway.Spec.ClusterDomain) {
+			addressType = openfunction.InternalAddressType
+		} else {
+			addressType = openfunction.ExternalAddressType
+		}
+		for _, path := range paths {
+			addressValue := url.URL{
+				Scheme: "http",
+				Host:   string(hostname),
+				Path:   *path.Value,
+			}
+			address := openfunction.FunctionAddress{
+				Type:  &addressType,
+				Value: addressValue.String(),
+			}
+			addresses = append(addresses, address)
+		}
+	}
+	fn.Status.Addresses = addresses
+	if !equality.Semantic.DeepEqual(oldRouteStatus, fn.Status.Route) {
+		if err := r.Status().Update(r.ctx, fn); err != nil {
+			log.Error(err, "Failed to update status on function", "namespace", fn.Namespace, "name", fn.Name)
+		}
+		log.Info("Updated status on function", "namespace", fn.Namespace,
+			"name", fn.Name, "resource version", fn.ResourceVersion)
+	}
+}
+
 func (r *FunctionReconciler) createOrUpdateService(fn *openfunction.Function) error {
 	log := r.Log.WithName("CreateOrUpdateService").
 		WithValues("Function", fmt.Sprintf("%s/%s", fn.Namespace, fn.Name))
@@ -858,6 +1090,15 @@ func createIngressPath(fn *openfunction.Function) networkingv1.HTTPIngressPath {
 	}
 }
 
+func containsHTTPHostname(hostnames []k8sgatewayapiv1alpha2.Hostname, hostname k8sgatewayapiv1alpha2.Hostname) bool {
+	for _, item := range hostnames {
+		if item == hostname {
+			return true
+		}
+	}
+	return false
+}
+
 func addAnnotations(ingress *networkingv1.Ingress, annotations map[string]string) {
 	if annotations == nil {
 		return
@@ -936,5 +1177,32 @@ func (r *FunctionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&openfunction.Function{}).
 		Owns(&openfunction.Builder{}).
 		Owns(&openfunction.Serving{}).
+		Watches(
+			&source.Kind{Type: &networkingv1alpha1.Gateway{}},
+			handler.EnqueueRequestsFromMapFunc(r.findObjectsForGateway),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
 		Complete(r)
+}
+
+func (r *FunctionReconciler) findObjectsForGateway(gateway client.Object) []reconcile.Request {
+	attachedFunctions := &openfunction.FunctionList{}
+	listOps := client.MatchingFields{
+		".spec.route.gatewayRef.namespace": gateway.GetNamespace(),
+		".spec.route.gatewayRef.name":      gateway.GetName(),
+	}
+	err := r.List(context.TODO(), attachedFunctions, listOps)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+	requests := make([]reconcile.Request, len(attachedFunctions.Items))
+	for i, item := range attachedFunctions.Items {
+		requests[i] = reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      item.GetName(),
+				Namespace: item.GetNamespace(),
+			},
+		}
+	}
+	return requests
 }

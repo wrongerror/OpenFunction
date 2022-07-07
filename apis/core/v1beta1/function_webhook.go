@@ -18,17 +18,17 @@ package v1beta1
 
 import (
 	"fmt"
-	"reflect"
-	"regexp"
-
 	shipwrightv1alpha1 "github.com/shipwright-io/build/pkg/apis/build/v1alpha1"
 	"k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"reflect"
+	"regexp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	k8sgatewayapiv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 )
 
 var (
@@ -84,6 +84,19 @@ func (r *Function) Default() {
 	if r.Spec.Version == nil || *r.Spec.Version == "" {
 		version := "latest"
 		r.Spec.Version = &version
+	}
+
+	if r.Spec.Route == nil || r.Spec.Route.GatewayRef == nil {
+		namespace := k8sgatewayapiv1alpha2.Namespace(r.Namespace)
+		route := RouteImpl{
+			CommonRouteSpec: CommonRouteSpec{
+				GatewayRef: &GatewayRef{
+					Name:      DefaultGatewayName,
+					Namespace: &namespace,
+				},
+			},
+		}
+		r.Spec.Route = &route
 	}
 }
 

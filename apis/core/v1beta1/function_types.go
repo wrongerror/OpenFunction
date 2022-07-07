@@ -51,20 +51,21 @@ type Language string
 type AddressType string
 
 const (
-	InternalAddressType AddressType = "Internal"
-	ExternalAddressType AddressType = "External"
-	BuildPhase                      = "Build"
-	ServingPhase                    = "Serving"
-	Created                         = "Created"
-	Building                        = "Building"
-	Starting                        = "Starting"
-	Running                         = "Running"
-	Succeeded                       = "Succeeded"
-	Failed                          = "Failed"
-	Skipped                         = "Skipped"
-	Timeout                         = "Timeout"
-	Canceled                        = "Canceled"
-	UnknownRuntime                  = "UnknownRuntime"
+	InternalAddressType AddressType                      = "Internal"
+	ExternalAddressType AddressType                      = "External"
+	DefaultGatewayName  k8sgatewayapiv1alpha2.ObjectName = "openfunction"
+	BuildPhase                                           = "Build"
+	ServingPhase                                         = "Serving"
+	Created                                              = "Created"
+	Building                                             = "Building"
+	Starting                                             = "Starting"
+	Running                                              = "Running"
+	Succeeded                                            = "Succeeded"
+	Failed                                               = "Failed"
+	Skipped                                              = "Skipped"
+	Timeout                                              = "Timeout"
+	Canceled                                             = "Canceled"
+	UnknownRuntime                                       = "UnknownRuntime"
 )
 
 type Strategy struct {
@@ -88,17 +89,10 @@ type ShipwrightEngine struct {
 type GatewayRef struct {
 	// Name is the name of the referent.
 	// It refers to the name of a Gateway resource.
-	//
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=253
-	Name string `json:"name"`
-	// Namespace is the namespace of the referent. When unspecified (or empty
-	// string), this refers to the local namespace of the Route.
-	//
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	Namespace string `json:"namespace"`
+	Name k8sgatewayapiv1alpha2.ObjectName `json:"name"`
+	// Namespace is the namespace of the referent. When unspecified,
+	// this refers to the local namespace of the Route.
+	Namespace *k8sgatewayapiv1alpha2.Namespace `json:"namespace"`
 }
 
 // CommonRouteSpec defines the common attributes that all Routes MUST include
@@ -261,14 +255,36 @@ type Condition struct {
 }
 
 type FunctionAddress struct {
-	Type  *AddressType `json:"type"`
-	Value string       `json:"value"`
+	// Type of the address.
+	//
+	Type *AddressType `json:"type"`
+	// Value of the address.
+	//
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Value string `json:"value"`
 }
 
 type RouteStatus struct {
-	Hosts      []k8sgatewayapiv1alpha2.Hostname      `json:"hosts,omitempty"`
-	Paths      []k8sgatewayapiv1alpha2.HTTPPathMatch `json:"paths,omitempty"`
-	Conditions []metav1.Condition                    `json:"conditions,omitempty"`
+	// Hosts list all actual hostnames of HTTPRoute.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	Hosts []k8sgatewayapiv1alpha2.Hostname `json:"hosts,omitempty"`
+	// Paths list all actual paths of HTTPRoute.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	Paths []k8sgatewayapiv1alpha2.HTTPPathMatch `json:"paths,omitempty"`
+	// Conditions describes the status of the route with respect to the Gateway.
+	// Note that the route's availability is also subject to the Gateway's own
+	// status conditions and listener status.
+	//
+	// +listType=map
+	// +listMapKey=type
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=8
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // FunctionStatus defines the observed state of Function
@@ -279,6 +295,8 @@ type FunctionStatus struct {
 	// Addresses holds the addresses that used to access the Function.
 	// +optional
 	Addresses []FunctionAddress `json:"addresses,omitempty"`
+	// URL holds the url that used to access the Function.
+	// It generally has the form http://{domain-name}.{domain-namespace}:{domain-port}/{function-namespace}/{function-name}
 	// +optional
 	URL string `json:"URL,omitempty"`
 }

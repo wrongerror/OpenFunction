@@ -20,8 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/fields"
@@ -36,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -366,7 +365,7 @@ func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.
 	gatewayListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
 	k8sGatewayListeners := convertListenersListToMapping(r.k8sGateway.Spec.Listeners)
 	for name, gatewayListener := range gatewayListeners {
-		if k8sGatewayListener, ok := k8sGatewayListeners[name]; !ok || !reflect.DeepEqual(gatewayListener, k8sGatewayListener) {
+		if k8sGatewayListener, ok := k8sGatewayListeners[name]; !ok || !equality.Semantic.DeepEqual(gatewayListener, k8sGatewayListener) {
 			return true
 		}
 	}
@@ -378,7 +377,7 @@ func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.
 	if err := json.Unmarshal(gatewayListenersAnnotation, &annotationListeners); err != nil {
 		return true
 	}
-	if !reflect.DeepEqual(annotationListeners, gatewayListeners) {
+	if !!equality.Semantic.DeepEqual(annotationListeners, gatewayListeners) {
 		return true
 	}
 	return false
@@ -418,7 +417,7 @@ func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, s
 			var servicePorts []corev1.ServicePort
 			var externalName string
 			for _, listener := range gateway.Spec.GatewaySpec.Listeners {
-				if string(*listener.Hostname) != fmt.Sprintf("*.%s", gateway.Spec.ClusterDomain) {
+				if !strings.HasSuffix(string(*listener.Hostname), gateway.Spec.ClusterDomain) {
 					servicePort := corev1.ServicePort{
 						Name:       string(listener.Name),
 						Protocol:   corev1.ProtocolTCP,

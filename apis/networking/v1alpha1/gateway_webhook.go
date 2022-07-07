@@ -46,22 +46,6 @@ var _ webhook.Defaulter = &Gateway{}
 func (r *Gateway) Default() {
 	gatewaylog.Info("default", "name", r.Name)
 
-	if r.Spec.ClusterDomain == "" {
-		r.Spec.ClusterDomain = ClusterDomain
-	}
-
-	if r.Spec.HostTemplate == "" {
-		r.Spec.HostTemplate = HostTemplate
-	}
-
-	if r.Spec.PathTemplate == "" {
-		r.Spec.PathTemplate = pathTemplate
-	}
-
-	if r.Spec.HttpRouteLabelKey == "" {
-		r.Spec.HttpRouteLabelKey = HttpRouteLabelKey
-	}
-
 	if r.Spec.GatewayDef != nil && r.Spec.GatewayDef.Name == "" {
 		r.Spec.GatewayDef.Name = r.GetName()
 	}
