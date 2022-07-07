@@ -7172,6 +7172,8 @@ spec:
                     type:
                       type: string
                     value:
+                      maxLength: 253
+                      minLength: 1
                       type: string
                   required:
                   - type
@@ -7228,13 +7230,19 @@ spec:
                       - status
                       - type
                       type: object
+                    maxItems: 8
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - type
+                    x-kubernetes-list-type: map
                   hosts:
                     items:
                       maxLength: 253
                       minLength: 1
                       pattern: ^(\*\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                       type: string
+                    maxItems: 16
                     type: array
                   paths:
                     items:
@@ -7251,6 +7259,7 @@ spec:
                           maxLength: 1024
                           type: string
                       type: object
+                    maxItems: 16
                     type: array
                 type: object
               serving:

@@ -219,11 +219,13 @@ spec:
                 - listeners
                 type: object
               hostTemplate:
+                default: '{{.Name}}.{{.Namespace}}.{{.Domain}}'
                 type: string
               httpRouteLabelKey:
                 default: app.kubernetes.io/managed-by
                 type: string
               pathTemplate:
+                default: '{{.Namespace}}/{{.Name}}'
                 type: string
             required:
             - clusterDomain
