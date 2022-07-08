@@ -30,14 +30,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
+	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
-	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,10 +49,6 @@ import (
 	networkingv1alpha1 "github.com/openfunction/apis/networking/v1alpha1"
 	"github.com/openfunction/pkg/constants"
 	"github.com/openfunction/pkg/util"
-)
-
-const (
-	defaultIngressName = "openfunction"
 )
 
 // FunctionReconciler reconciles a Function object
@@ -111,7 +106,7 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		if util.IsNotFound(err) {
 			log.V(1).Info("Function deleted")
-			return ctrl.Result{}, r.cleanDefaultIngress(&fn)
+			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{}, util.IgnoreNotFound(err)
@@ -126,10 +121,6 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if err := r.createOrUpdateHTTPRoute(&fn); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if err := r.createOrUpdateService(&fn); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -676,13 +667,24 @@ func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) 
 			"namespace", fn.Spec.Route.GatewayRef.Namespace, "name", fn.Spec.Route.GatewayRef.Name)
 		return err
 	}
+	var parentRefName k8sgatewayapiv1alpha2.ObjectName
+	var parentRefNamespace k8sgatewayapiv1alpha2.Namespace
+	if gateway.Spec.GatewayRef != nil {
+		parentRefName = k8sgatewayapiv1alpha2.ObjectName(gateway.Spec.GatewayRef.Name)
+		parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayRef.Namespace)
+
+	}
+	if gateway.Spec.GatewayDef != nil {
+		parentRefName = k8sgatewayapiv1alpha2.ObjectName(gateway.Spec.GatewayDef.Name)
+		parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayDef.Namespace)
+	}
 
 	httpRoute := &k8sgatewayapiv1alpha2.HTTPRoute{
 		ObjectMeta: metav1.ObjectMeta{Namespace: fn.Namespace, Name: fn.Name},
 		Spec: k8sgatewayapiv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: k8sgatewayapiv1alpha2.CommonRouteSpec{
 				ParentRefs: []k8sgatewayapiv1alpha2.ParentRef{
-					{Namespace: fn.Spec.Route.GatewayRef.Namespace, Name: fn.Spec.Route.GatewayRef.Name},
+					{Namespace: &parentRefNamespace, Name: parentRefName},
 				},
 			},
 			Hostnames: []k8sgatewayapiv1alpha2.Hostname{},
@@ -722,6 +724,15 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 		var rules []k8sgatewayapiv1alpha2.HTTPRouteRule
 		var port = constants.DefaultFunctionServicePort
 		var namespace = k8sgatewayapiv1alpha2.Namespace(fn.Namespace)
+		var filter = k8sgatewayapiv1alpha2.HTTPRouteFilter{
+			Type: k8sgatewayapiv1alpha2.HTTPRouteFilterRequestHeaderModifier,
+			RequestHeaderModifier: &k8sgatewayapiv1alpha2.HTTPRequestHeaderFilter{
+				Add: []k8sgatewayapiv1alpha2.HTTPHeader{{
+					Name:  "Host",
+					Value: string(clusterHostname),
+				}},
+			},
+		}
 
 		if fn.Spec.Route.Hostnames == nil {
 			var hostnameBuffer bytes.Buffer
@@ -769,21 +780,20 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 						},
 					},
 				},
+				Filters: []k8sgatewayapiv1alpha2.HTTPRouteFilter{filter},
 			}
 			rules = append(rules, rule)
 		} else {
 			for _, rule := range fn.Spec.Route.Rules {
-				rule.BackendRefs = []k8sgatewayapiv1alpha2.HTTPBackendRef{
-					{
-						BackendRef: k8sgatewayapiv1alpha2.BackendRef{
-							BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
-								Name:      k8sgatewayapiv1alpha2.ObjectName(fn.Status.Serving.Service),
-								Namespace: &namespace,
-								Port:      &port,
-							},
+				rule.BackendRefs = []k8sgatewayapiv1alpha2.HTTPBackendRef{{
+					BackendRef: k8sgatewayapiv1alpha2.BackendRef{
+						BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
+							Name:      k8sgatewayapiv1alpha2.ObjectName(fn.Status.Serving.Service),
+							Namespace: &namespace,
+							Port:      &port,
 						},
-					},
-				}
+					}}}
+				rule.Filters = append(rule.Filters, filter)
 				rules = append(rules, rule)
 			}
 		}
@@ -874,230 +884,6 @@ func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
 	}
 }
 
-func (r *FunctionReconciler) createOrUpdateService(fn *openfunction.Function) error {
-	log := r.Log.WithName("CreateOrUpdateService").
-		WithValues("Function", fmt.Sprintf("%s/%s", fn.Namespace, fn.Name))
-
-	// Does not create service when serving is not running or function is an async function.
-	if fn.Status.Serving == nil ||
-		fn.Status.Serving.State != openfunction.Running ||
-		fn.Status.Serving.Service == "" {
-		return nil
-	}
-
-	dl := &openfunction.DomainList{}
-	if err := r.List(r.ctx, dl); err != nil {
-		log.Error(err, "Failed to list domain")
-		return err
-	}
-
-	if len(dl.Items) == 0 {
-		log.Error(nil, "No Domain defined")
-		return fmt.Errorf("no Domain defined")
-	}
-
-	domain := &dl.Items[0]
-
-	if err := r.cleanIngress(fn); err != nil {
-		log.Error(err, "Failed to clean ingress")
-		return err
-	}
-
-	op, err := r.createOrUpdateIngress(fn, domain)
-	if err != nil {
-		log.Error(err, "Failed to createOrUpdate ingress")
-		return err
-	}
-
-	url := fmt.Sprintf("%s://%s.%s", "http", domain.Name, domain.Namespace)
-	if domain.Spec.Ingress.Service.Port != 0 && domain.Spec.Ingress.Service.Port != 80 {
-		url = fmt.Sprintf("%s:%d", url, domain.Spec.Ingress.Service.Port)
-	}
-	url = fmt.Sprintf("%s/%s/%s", url, fn.Namespace, fn.Name)
-	if url != fn.Status.URL {
-		fn.Status.URL = url
-		if err := r.Status().Update(r.ctx, fn); err != nil {
-			log.Error(err, "Failed to update function url")
-			return err
-		}
-	}
-
-	log.V(1).Info(fmt.Sprintf("Service %s", op))
-	return nil
-}
-
-func (r *FunctionReconciler) cleanIngress(fn *openfunction.Function) error {
-
-	// If the function use a standalone ingress, delete configuration from default ingress.
-	if fn.Spec.Service != nil && fn.Spec.Service.UseStandaloneIngress {
-		return r.cleanDefaultIngress(fn)
-	}
-
-	// The function use default ingress, delete the standalone ingress for function.
-	ingress := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fn.Name,
-			Namespace: fn.Namespace,
-		},
-	}
-
-	return util.IgnoreNotFound(r.Delete(r.ctx, ingress))
-}
-
-// Delete `path` from default ingress.
-func (r *FunctionReconciler) cleanDefaultIngress(fn *openfunction.Function) error {
-	ingress := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      defaultIngressName,
-			Namespace: fn.Namespace,
-		},
-	}
-
-	if err := r.Get(r.ctx, client.ObjectKeyFromObject(ingress), ingress); err != nil {
-		return util.IgnoreNotFound(err)
-	}
-
-	for i := 0; i < len(ingress.Spec.Rules); i++ {
-		rule := ingress.Spec.Rules[i]
-		if rule.HTTP == nil {
-			continue
-		}
-
-		for i := 0; i < len(rule.HTTP.Paths); i++ {
-			if rule.HTTP.Paths[i].Path == fmt.Sprintf("/%s/%s(/|$)(.*)", fn.Namespace, fn.Name) {
-				rule.HTTP.Paths = append(rule.HTTP.Paths[:i], rule.HTTP.Paths[i+1:]...)
-				break
-			}
-		}
-
-		if len(rule.HTTP.Paths) == 0 {
-			ingress.Spec.Rules = append(ingress.Spec.Rules[:i], ingress.Spec.Rules[i+1:]...)
-			i = i - 1
-		}
-	}
-
-	if len(ingress.Spec.Rules) == 0 {
-		return util.IgnoreNotFound(r.Delete(r.ctx, ingress))
-	}
-
-	return r.Update(r.ctx, ingress)
-}
-
-func (r *FunctionReconciler) createOrUpdateIngress(fn *openfunction.Function, domain *openfunction.Domain) (controllerutil.OperationResult, error) {
-
-	name := defaultIngressName
-	if fn.Spec.Service != nil && fn.Spec.Service.UseStandaloneIngress {
-		name = fn.Name
-	}
-
-	ingress := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: fn.Namespace,
-		},
-	}
-
-	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, ingress, r.mutateIngress(fn, domain, ingress))
-	if err != nil {
-		return controllerutil.OperationResultNone, err
-	}
-
-	return op, nil
-}
-
-func (r *FunctionReconciler) mutateIngress(fn *openfunction.Function, domain *openfunction.Domain, ingress *networkingv1.Ingress) controllerutil.MutateFn {
-
-	return func() error {
-		path := createIngressPath(fn)
-		ingressClassName := domain.Spec.Ingress.IngressClassName
-		if fn.Spec.Service != nil && fn.Spec.Service.UseStandaloneIngress {
-			ingress.Spec = networkingv1.IngressSpec{
-				IngressClassName: &ingressClassName,
-				Rules: []networkingv1.IngressRule{
-					{
-						IngressRuleValue: networkingv1.IngressRuleValue{
-							HTTP: &networkingv1.HTTPIngressRuleValue{
-								Paths: []networkingv1.HTTPIngressPath{
-									path,
-								},
-							},
-						},
-					},
-				},
-			}
-
-			addAnnotations(ingress, domain.Spec.Ingress.Annotations)
-			if fn.Spec.Service != nil {
-				addAnnotations(ingress, fn.Spec.Service.Annotations)
-			}
-
-			return controllerutil.SetControllerReference(fn, ingress, r.Scheme)
-
-		} else {
-			if err := r.Get(r.ctx, client.ObjectKeyFromObject(ingress), ingress); util.IgnoreNotFound(err) != nil {
-				return err
-			}
-
-			found := false
-			findPath := func(paths []networkingv1.HTTPIngressPath) bool {
-				for i := 0; i < len(paths); i++ {
-					if paths[i].Path == fmt.Sprintf("/%s/%s(/|$)(.*)", fn.Namespace, fn.Name) {
-						paths[i] = path
-						return true
-					}
-				}
-
-				return false
-			}
-
-			for _, rule := range ingress.Spec.Rules {
-				if rule.HTTP == nil {
-					continue
-				}
-
-				if res := findPath(rule.HTTP.Paths); res {
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				if len(ingress.Spec.Rules) == 0 {
-					ingress.Spec.Rules = append(ingress.Spec.Rules, networkingv1.IngressRule{})
-				}
-
-				if ingress.Spec.Rules[0].HTTP == nil {
-					ingress.Spec.Rules[0].HTTP = &networkingv1.HTTPIngressRuleValue{}
-				}
-				ingress.Spec.Rules[0].HTTP.Paths = append(ingress.Spec.Rules[0].HTTP.Paths, path)
-			}
-
-			ingress.Annotations = nil
-			addAnnotations(ingress, domain.Spec.Ingress.Annotations)
-			ingress.Spec.IngressClassName = &ingressClassName
-
-			return nil
-		}
-	}
-}
-
-func createIngressPath(fn *openfunction.Function) networkingv1.HTTPIngressPath {
-
-	pathType := networkingv1.PathTypePrefix
-	return networkingv1.HTTPIngressPath{
-		Path:     fmt.Sprintf("/%s/%s(/|$)(.*)", fn.Namespace, fn.Name),
-		PathType: &pathType,
-		Backend: networkingv1.IngressBackend{
-			Service: &networkingv1.IngressServiceBackend{
-				Name: fn.Status.Serving.Service,
-				Port: networkingv1.ServiceBackendPort{
-					Number: 80,
-				},
-			},
-		},
-	}
-}
-
 func containsHTTPHostname(hostnames []k8sgatewayapiv1alpha2.Hostname, hostname k8sgatewayapiv1alpha2.Hostname) bool {
 	for _, item := range hostnames {
 		if item == hostname {
@@ -1105,20 +891,6 @@ func containsHTTPHostname(hostnames []k8sgatewayapiv1alpha2.Hostname, hostname k
 		}
 	}
 	return false
-}
-
-func addAnnotations(ingress *networkingv1.Ingress, annotations map[string]string) {
-	if annotations == nil {
-		return
-	}
-
-	if ingress.Annotations == nil {
-		ingress.Annotations = make(map[string]string)
-	}
-
-	for k, v := range annotations {
-		ingress.Annotations[k] = v
-	}
 }
 
 func (r *FunctionReconciler) startFunctionWatcher() {
@@ -1188,7 +960,7 @@ func (r *FunctionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&source.Kind{Type: &networkingv1alpha1.Gateway{}},
 			handler.EnqueueRequestsFromMapFunc(r.findObjectsForGateway),
-			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+			ctrlbuilder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
 		Complete(r)
 }
