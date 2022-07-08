@@ -25,13 +25,16 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 const (
-	ClusterDomain              = "cluster.local"
-	HostTemplate               = "{{.Name}}.{{.Namespace}}.{{.Domain}}"
-	pathTemplate               = "{{.Namespace}}/{{.Name}}"
-	HttpRouteLabelKey          = "app.kubernetes.io/managed-by"
 	DefaultHttpListenerName    = "ofn-http-internal"
 	DefaultListenersCount      = 1
 	GatewayListenersAnnotation = "networking.openfunction.io/inject-listeners"
+	GatewayServiceName         = "gateway"
+	IstioGatewayClassName      = "istio"
+	ContourGatewayClassName    = "contour"
+	ContourGatewayServiceName  = "envoy"
+	GatewayFinalizerName       = "networking.openfunction.io/finalizer"
+	GatewayIndexField          = ".spec.gatewayRef.Index"
+	K8sGatewayIndexField       = ".spec.gatewayClassName"
 )
 
 const (

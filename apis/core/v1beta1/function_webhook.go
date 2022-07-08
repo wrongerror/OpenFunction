@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	"fmt"
+	"github.com/openfunction/pkg/constants"
 	"reflect"
 	"regexp"
 
@@ -29,7 +30,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	k8sgatewayapiv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 )
 
 var (
@@ -88,11 +88,11 @@ func (r *Function) Default() {
 	}
 
 	if r.Spec.Route == nil || r.Spec.Route.GatewayRef == nil {
-		namespace := k8sgatewayapiv1alpha2.Namespace(r.Namespace)
+		namespace := constants.DefaultGatewayNamespace
 		route := RouteImpl{
 			CommonRouteSpec: CommonRouteSpec{
 				GatewayRef: &GatewayRef{
-					Name:      DefaultGatewayName,
+					Name:      constants.DefaultGatewayName,
 					Namespace: &namespace,
 				},
 			},

@@ -51,22 +51,22 @@ type Language string
 type AddressType string
 
 const (
-	InternalAddressType AddressType                      = "Internal"
-	ExternalAddressType AddressType                      = "External"
-	DefaultGatewayName  k8sgatewayapiv1alpha2.ObjectName = "openfunction"
-	BuildPhase                                           = "Build"
-	ServingPhase                                         = "Serving"
-	Created                                              = "Created"
-	Building                                             = "Building"
-	Starting                                             = "Starting"
-	Running                                              = "Running"
-	Succeeded                                            = "Succeeded"
-	Failed                                               = "Failed"
-	Skipped                                              = "Skipped"
-	Timeout                                              = "Timeout"
-	Canceled                                             = "Canceled"
-	UnknownRuntime                                       = "UnknownRuntime"
+	BuildPhase     = "Build"
+	ServingPhase   = "Serving"
+	Created        = "Created"
+	Building       = "Building"
+	Starting       = "Starting"
+	Running        = "Running"
+	Succeeded      = "Succeeded"
+	Failed         = "Failed"
+	Skipped        = "Skipped"
+	Timeout        = "Timeout"
+	Canceled       = "Canceled"
+	UnknownRuntime = "UnknownRuntime"
 )
+
+const InternalAddressType AddressType = "Internal"
+const ExternalAddressType AddressType = "External"
 
 type Strategy struct {
 	// Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names

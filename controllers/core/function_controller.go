@@ -125,11 +125,11 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	if err := r.createOrUpdateService(&fn); err != nil {
+	if err := r.createOrUpdateHTTPRoute(&fn); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := r.createOrUpdateHTTPRoute(&fn); err != nil {
+	if err := r.createOrUpdateService(&fn); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -701,7 +701,7 @@ func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Namespace: fn.Namespace, Name: fn.Name},
 	}
-	op, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, service, r.mutateService(fn, gateway, httpRoute, service))
+	op, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, service, r.mutateService(fn, gateway, service))
 	if err != nil {
 		log.Error(err, "Failed to CreateOrUpdate service")
 		return err
@@ -717,10 +717,10 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute) controllerutil.MutateFn {
 	return func() error {
 		var clusterHostname = k8sgatewayapiv1alpha2.Hostname(
-			fmt.Sprintf("%s.%s.%s", fn.Name, fn.Namespace, gateway.Spec.ClusterDomain))
+			fmt.Sprintf("%s.%s.svc.%s", fn.Name, fn.Namespace, gateway.Spec.ClusterDomain))
 		var hostnames []k8sgatewayapiv1alpha2.Hostname
 		var rules []k8sgatewayapiv1alpha2.HTTPRouteRule
-		var port = k8sgatewayapiv1alpha2.PortNumber(*fn.Spec.Port)
+		var port = constants.DefaultFunctionServicePort
 		var namespace = k8sgatewayapiv1alpha2.Namespace(fn.Namespace)
 
 		if fn.Spec.Route.Hostnames == nil {
@@ -784,10 +784,11 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 						},
 					},
 				}
+				rules = append(rules, rule)
 			}
 		}
-		httpRoute.Spec.Hostnames = append(httpRoute.Spec.Hostnames, hostnames...)
-		httpRoute.Spec.Rules = append(httpRoute.Spec.Rules, rules...)
+		httpRoute.Spec.Hostnames = hostnames
+		httpRoute.Spec.Rules = rules
 		return ctrl.SetControllerReference(fn, httpRoute, r.Scheme)
 	}
 }
@@ -795,11 +796,13 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 func (r *FunctionReconciler) mutateService(
 	fn *openfunction.Function,
 	gateway *networkingv1alpha1.Gateway,
-	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute,
 	service *corev1.Service) controllerutil.MutateFn {
 	return func() error {
 		var servicePorts []corev1.ServicePort
-		var externalName string
+		var externalName = fmt.Sprintf("%s.%s.svc.%s",
+			networkingv1alpha1.GatewayServiceName,
+			gateway.Namespace,
+			gateway.Spec.ClusterDomain)
 		for _, listener := range gateway.Spec.GatewaySpec.Listeners {
 			if strings.HasSuffix(string(*listener.Hostname), gateway.Spec.ClusterDomain) {
 				servicePort := corev1.ServicePort{
@@ -809,12 +812,6 @@ func (r *FunctionReconciler) mutateService(
 					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: int32(listener.Port)},
 				}
 				servicePorts = append(servicePorts, servicePort)
-			}
-		}
-		for _, hostname := range httpRoute.Spec.Hostnames {
-			if strings.HasSuffix(string(hostname), gateway.Spec.ClusterDomain) {
-				externalName = string(hostname)
-				break
 			}
 		}
 		service.Spec.Type = corev1.ServiceTypeExternalName
@@ -832,7 +829,14 @@ func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
 	var addresses []openfunction.FunctionAddress
 	var paths []k8sgatewayapiv1alpha2.HTTPPathMatch
 	var oldRouteStatus = fn.Status.Route.DeepCopy()
-	fn.Status.Route.Conditions = httpRoute.Status.Parents[0].Conditions
+	if fn.Status.Route == nil {
+		fn.Status.Route = &openfunction.RouteStatus{}
+	}
+	if len(httpRoute.Status.RouteStatus.Parents) != 0 {
+		fn.Status.Route.Conditions = httpRoute.Status.Parents[0].Conditions
+	} else {
+		// todo
+	}
 	fn.Status.Route.Hosts = httpRoute.Spec.Hostnames
 	for _, httpRule := range httpRoute.Spec.Rules {
 		for _, match := range httpRule.Matches {
