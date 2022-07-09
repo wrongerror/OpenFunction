@@ -25,17 +25,15 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 const (
-	DefaultHttpListenerName    = "ofn-http-internal"
-	DefaultHttpListenersCount  = 1
-	GatewayConfigAnnotation    = "networking.openfunction.io/last-applied-configuration"
-	GatewayListenersAnnotation = "networking.openfunction.io/inject-listeners"
-	GatewayServiceName         = "gateway"
-	IstioGatewayClassName      = "istio"
-	ContourGatewayClassName    = "contour"
-	ContourGatewayServiceName  = "envoy"
-	GatewayFinalizerName       = "networking.openfunction.io/finalizer"
-	GatewayIndexField          = ".spec.gatewayRef.Index"
-	K8sGatewayIndexField       = ".spec.gatewayClassName"
+	DefaultHttpListenersCount    = 1
+	DefaultHttpListenerName      = "ofn-http-internal"
+	GatewayConfigAnnotation      = "networking.openfunction.io/last-applied-configuration"
+	GatewayListenersAnnotation   = "networking.openfunction.io/inject-listeners"
+	DefaultGatewayServiceName    = "gateway"
+	DefaultK8sGatewayServiceName = "envoy"
+	GatewayFinalizerName         = "networking.openfunction.io/finalizer"
+	GatewayIndexField            = ".spec.gatewayRef.Index"
+	K8sGatewayIndexField         = ".spec.gatewayClassName"
 )
 
 const (

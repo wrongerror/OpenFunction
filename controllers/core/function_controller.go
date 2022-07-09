@@ -809,7 +809,7 @@ func (r *FunctionReconciler) mutateService(
 	return func() error {
 		var servicePorts []corev1.ServicePort
 		var externalName = fmt.Sprintf("%s.%s.svc.%s",
-			networkingv1alpha1.GatewayServiceName,
+			networkingv1alpha1.DefaultGatewayServiceName,
 			gateway.Namespace,
 			gateway.Spec.ClusterDomain)
 		for _, listener := range gateway.Spec.GatewaySpec.Listeners {

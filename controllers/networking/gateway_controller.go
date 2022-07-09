@@ -428,7 +428,7 @@ func (r *GatewayReconciler) syncStatusFromK8sGateway(gateway *networkingv1alpha1
 func (r *GatewayReconciler) createOrUpdateService(gateway *networkingv1alpha1.Gateway) error {
 	log := r.Log.WithName("createOrUpdateService")
 	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: gateway.Namespace, Name: networkingv1alpha1.GatewayServiceName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: gateway.Namespace, Name: networkingv1alpha1.DefaultGatewayServiceName},
 	}
 	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, service, r.mutateService(gateway, service))
 	if err != nil {
@@ -458,9 +458,9 @@ func (r *GatewayReconciler) mutateService(gateway *networkingv1alpha1.Gateway, s
 			if networkingv1alpha1.GatewayCompatibilities[string(r.k8sGateway.Spec.GatewayClassName)]["implementedAddresses"] {
 				externalName = fmt.Sprintf("%s.%s.svc.%s",
 					r.k8sGateway.Name, r.k8sGateway.Namespace, gateway.Spec.ClusterDomain)
-			} else if string(r.k8sGateway.Spec.GatewayClassName) == networkingv1alpha1.ContourGatewayClassName {
+			} else {
 				externalName = fmt.Sprintf("%s.%s.svc.%s",
-					networkingv1alpha1.ContourGatewayServiceName, r.k8sGateway.Namespace, gateway.Spec.ClusterDomain)
+					networkingv1alpha1.DefaultK8sGatewayServiceName, r.k8sGateway.Namespace, gateway.Spec.ClusterDomain)
 			}
 			service.Spec.Type = corev1.ServiceTypeExternalName
 			service.Spec.Ports = servicePorts
