@@ -94,7 +94,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	} else {
 		if controllerutil.ContainsFinalizer(gateway, networkingv1alpha1.GatewayFinalizerName) {
-			if err := r.cleanExternalResources(gateway); err != nil {
+			if err := r.cleanK8sGatewayResources(gateway); err != nil {
 				return ctrl.Result{}, err
 			}
 			controllerutil.RemoveFinalizer(gateway, networkingv1alpha1.GatewayFinalizerName)
@@ -105,7 +105,15 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	if err := r.cleanExternalResources(gateway); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := r.createOrUpdateGateway(gateway); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.updateGatewayAnnotations(gateway); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -138,9 +146,8 @@ func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Ga
 				Reason:             string(reason),
 				Message:            err.Error(),
 			}
-			gateway.Status.Conditions = nil
-			gateway.Status.Conditions = append(gateway.Status.Conditions, condition)
-			return err
+			gateway.Status.Conditions = []metav1.Condition{condition}
+			return util.IgnoreNotFound(err)
 		} else {
 			r.k8sGateway = k8sGateway
 			if r.needReconcileK8sGateway(gateway) {
@@ -175,8 +182,7 @@ func (r *GatewayReconciler) createOrUpdateGateway(gateway *networkingv1alpha1.Ga
 				Reason:             string(k8sgatewayapiv1alpha2.GatewayReasonNotReconciled),
 				Message:            err.Error(),
 			}
-			gateway.Status.Conditions = nil
-			gateway.Status.Conditions = append(gateway.Status.Conditions, condition)
+			gateway.Status.Conditions = []metav1.Condition{condition}
 			return err
 		}
 	}
@@ -212,8 +218,7 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 				Reason:             string(networkingv1alpha1.GatewayReasonExists),
 				Message:            err.Error(),
 			}
-			gateway.Status.Conditions = nil
-			gateway.Status.Conditions = append(gateway.Status.Conditions, condition)
+			gateway.Status.Conditions = []metav1.Condition{condition}
 			return err
 		}
 	}
@@ -242,7 +247,7 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 			Reason:             string(networkingv1alpha1.GatewayReasonCreationFailure),
 			Message:            err.Error(),
 		}
-		gateway.Status.Conditions = append(gateway.Status.Conditions, condition)
+		gateway.Status.Conditions = []metav1.Condition{condition}
 		return err
 	}
 
@@ -262,29 +267,31 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 
 func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gateway) error {
 	log := r.Log.WithName("reconcileK8sGateway")
-	var oldListeners []k8sgatewayapiv1alpha2.Listener
+	var oldGateway networkingv1alpha1.Gateway
+	oldGatewayListenersMapping := make(map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener)
 
-	if r.k8sGateway.Annotations == nil {
-		r.k8sGateway.Annotations = make(map[string]string)
+	gatewayConfigAnnotation := []byte(gateway.Annotations[networkingv1alpha1.GatewayConfigAnnotation])
+	if err := json.Unmarshal(gatewayConfigAnnotation, &oldGateway); err != nil {
+		log.Error(err, "Failed to Unmarshal GatewayConfigAnnotation")
+	} else {
+		oldGatewayListenersMapping = convertListenersListToMapping(oldGateway.Spec.GatewaySpec.Listeners)
 	}
-	gatewayListenersAnnotation := []byte(r.k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation])
-	if err := json.Unmarshal(gatewayListenersAnnotation, &oldListeners); err != nil {
-		log.Error(err, "Failed to Unmarshal GatewayListenersAnnotation")
-	}
-	oldListenersMapping := convertListenersListToMapping(oldListeners)
-	newListenersMapping := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+
+	newGatewayListenersMapping := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
 	k8sGatewayListenersMapping := convertListenersListToMapping(r.k8sGateway.Spec.Listeners)
-	for name := range oldListenersMapping {
-		if _, ok := newListenersMapping[name]; !ok {
+	for name := range oldGatewayListenersMapping {
+		if _, ok := newGatewayListenersMapping[name]; !ok {
 			delete(k8sGatewayListenersMapping, name)
 		}
 	}
-	for name, listener := range newListenersMapping {
+	for name, listener := range newGatewayListenersMapping {
 		k8sGatewayListenersMapping[name] = listener
 	}
-	k8sGatewayListeners := convertListenersMappingToList(k8sGatewayListenersMapping)
-	r.k8sGateway.Spec.Listeners = k8sGatewayListeners
+	r.k8sGateway.Spec.Listeners = convertListenersMappingToList(k8sGatewayListenersMapping)
 	listenersAnnotation, _ := json.Marshal(gateway.Spec.GatewaySpec.Listeners)
+	if r.k8sGateway.Annotations == nil {
+		r.k8sGateway.Annotations = make(map[string]string)
+	}
 	r.k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation] = string(listenersAnnotation)
 
 	if err := r.Update(r.ctx, r.k8sGateway); err != nil {
@@ -298,15 +305,33 @@ func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gate
 			Reason:             string(k8sgatewayapiv1alpha2.GatewayReasonNotReconciled),
 			Message:            err.Error(),
 		}
-		gateway.Status.Conditions = nil
-		gateway.Status.Conditions = append(gateway.Status.Conditions, condition)
+		gateway.Status.Conditions = []metav1.Condition{condition}
 		return err
 	}
 	return nil
 }
 
 func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.Gateway) error {
-	log := r.Log.WithName("cleanExternalResources")
+	log := r.Log.WithName("cleanK8sGatewayResources")
+	var oldGateway networkingv1alpha1.Gateway
+
+	gatewayConfigAnnotation := []byte(gateway.Annotations[networkingv1alpha1.GatewayConfigAnnotation])
+	if err := json.Unmarshal(gatewayConfigAnnotation, &oldGateway); err != nil {
+		log.Error(err, "Failed to Unmarshal GatewayConfigAnnotation")
+		return nil
+	}
+
+	if !equality.Semantic.DeepEqual(oldGateway.Spec.GatewayRef, gateway.Spec.GatewayRef) ||
+		!equality.Semantic.DeepEqual(oldGateway.Spec.GatewayDef, gateway.Spec.GatewayDef) {
+		if err := r.cleanK8sGatewayResources(&oldGateway); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *GatewayReconciler) cleanK8sGatewayResources(gateway *networkingv1alpha1.Gateway) error {
+	log := r.Log.WithName("cleanK8sGatewayResources")
 	if gateway.Spec.GatewayRef != nil {
 		k8sGateway := &k8sgatewayapiv1alpha2.Gateway{}
 		key := client.ObjectKey{Namespace: gateway.Spec.GatewayRef.Namespace, Name: gateway.Spec.GatewayRef.Name}
@@ -317,21 +342,12 @@ func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.G
 			}
 			return util.IgnoreNotFound(err)
 		}
-		if k8sGateway.Annotations == nil {
-			return nil
-		}
-		var needRemoveListeners []k8sgatewayapiv1alpha2.Listener
-		gatewayListenersAnnotation := []byte(k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation])
-		if err := json.Unmarshal(gatewayListenersAnnotation, &needRemoveListeners); err != nil {
-			return nil
-		}
-		needRemoveListenersMapping := convertListenersListToMapping(needRemoveListeners)
+		needRemoveListenersMapping := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
 		k8sGatewayListenersMapping := convertListenersListToMapping(k8sGateway.Spec.Listeners)
 		for name := range needRemoveListenersMapping {
 			delete(k8sGatewayListenersMapping, name)
 		}
-		k8sGatewayListeners := convertListenersMappingToList(k8sGatewayListenersMapping)
-		k8sGateway.Spec.Listeners = k8sGatewayListeners
+		k8sGateway.Spec.Listeners = convertListenersMappingToList(k8sGatewayListenersMapping)
 		delete(k8sGateway.Annotations, networkingv1alpha1.GatewayListenersAnnotation)
 		if err := r.Update(r.ctx, k8sGateway); err != nil {
 			log.Error(err, "Failed to clean k8s Gateway",
@@ -340,8 +356,11 @@ func (r *GatewayReconciler) cleanExternalResources(gateway *networkingv1alpha1.G
 		}
 	}
 
-	if gateway.Spec.GatewayDef != nil && r.k8sGateway != nil {
-		if err := r.Delete(r.ctx, r.k8sGateway); err != nil {
+	if gateway.Spec.GatewayDef != nil {
+		k8sGateway := &k8sgatewayapiv1alpha2.Gateway{
+			ObjectMeta: metav1.ObjectMeta{Namespace: gateway.Spec.GatewayDef.Namespace, Name: gateway.Spec.GatewayDef.Name},
+		}
+		if err := r.Delete(r.ctx, k8sGateway); err != nil {
 			if !util.IsNotFound(err) {
 				log.Error(err, "Failed to clean k8s Gateway",
 					"namespace", gateway.Spec.GatewayDef.Namespace, "name", gateway.Spec.GatewayDef.Name)
@@ -360,18 +379,36 @@ func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.
 			return true
 		}
 	}
-	if r.k8sGateway.Annotations == nil {
+	var oldGateway networkingv1alpha1.Gateway
+	gatewayConfigAnnotation := []byte(gateway.Annotations[networkingv1alpha1.GatewayConfigAnnotation])
+	if err := json.Unmarshal(gatewayConfigAnnotation, &oldGateway); err != nil {
 		return true
 	}
-	var annotationListeners []k8sgatewayapiv1alpha2.Listener
-	gatewayListenersAnnotation := []byte(r.k8sGateway.Annotations[networkingv1alpha1.GatewayListenersAnnotation])
-	if err := json.Unmarshal(gatewayListenersAnnotation, &annotationListeners); err != nil {
-		return true
-	}
-	if !!equality.Semantic.DeepEqual(annotationListeners, gatewayListeners) {
+
+	if !!equality.Semantic.DeepEqual(oldGateway.Spec.GatewaySpec.Listeners, gatewayListeners) {
 		return true
 	}
 	return false
+}
+
+func (r *GatewayReconciler) updateGatewayAnnotations(gateway *networkingv1alpha1.Gateway) error {
+	log := r.Log.WithName("updateGatewayAnnotations")
+	var oldGateway networkingv1alpha1.Gateway
+	oldGatewayConfigAnnotation := []byte(gateway.Annotations[networkingv1alpha1.GatewayConfigAnnotation])
+	if err := json.Unmarshal(oldGatewayConfigAnnotation, &oldGateway); err != nil {
+		log.Error(err, "Failed to Unmarshal GatewayConfigAnnotation")
+	}
+	if equality.Semantic.DeepEqual(oldGateway.Spec, gateway.Spec) {
+		return nil
+	}
+	gatewayConfigAnnotation, _ := json.Marshal(gateway)
+	gateway.Annotations[networkingv1alpha1.GatewayConfigAnnotation] = string(gatewayConfigAnnotation)
+	if err := r.Update(r.ctx, gateway); err != nil {
+		log.Error(err, "Failed to update annotations on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
+		return err
+	}
+	log.Info("Updated annotations on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
+	return nil
 }
 
 func (r *GatewayReconciler) syncStatusFromK8sGateway(gateway *networkingv1alpha1.Gateway) {
@@ -440,8 +477,7 @@ func (r *GatewayReconciler) updateGatewayStatus(oldStatus *networkingv1alpha1.Ga
 		if err := r.Status().Update(r.ctx, gateway); err != nil {
 			log.Error(err, "Failed to update status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
 		}
-		log.Info("Updated status on Gateway", "namespace", gateway.Namespace,
-			"name", gateway.Name, "resource version", gateway.ResourceVersion)
+		log.Info("Updated status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
 	}
 }
 

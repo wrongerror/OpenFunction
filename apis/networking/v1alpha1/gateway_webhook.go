@@ -17,7 +17,10 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"bytes"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/json"
+	"text/template"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -87,6 +90,16 @@ func (r *Gateway) Default() {
 		}
 		r.Spec.GatewaySpec.Listeners = append(r.Spec.GatewaySpec.Listeners, internalHttpListener)
 	}
+
+	if r.Annotations == nil {
+		annotations := make(map[string]string)
+		gatewaySpecAnnotation, _ := json.Marshal(r.Spec)
+		annotations[GatewayConfigAnnotation] = string(gatewaySpecAnnotation)
+		r.Annotations = annotations
+	} else if _, ok := r.Annotations[GatewayConfigAnnotation]; !ok {
+		gatewaySpecAnnotation, _ := json.Marshal(r.Spec)
+		r.Annotations[GatewayConfigAnnotation] = string(gatewaySpecAnnotation)
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
@@ -115,9 +128,40 @@ func (r *Gateway) ValidateDelete() error {
 }
 
 func (r *Gateway) Validate() error {
+	var hostnameBuffer bytes.Buffer
+	var pathBuffer bytes.Buffer
 	if r.Spec.Domain == "" {
-		return field.Required(field.NewPath("spec", "Domain"),
+		return field.Required(field.NewPath("spec", "domain"),
 			"must specify domain")
+	}
+
+	if hostTemplate, err := template.New("host").Parse(r.Spec.HostTemplate); err != nil {
+		return field.Invalid(field.NewPath("spec", "hostTemplate"),
+			r.Spec.HostTemplate, "invalid template")
+	} else {
+		hostInfoObj := struct {
+			Name      string
+			Namespace string
+			Domain    string
+		}{Name: r.Name, Namespace: r.Namespace, Domain: r.Spec.Domain}
+		if err := hostTemplate.Execute(&hostnameBuffer, hostInfoObj); err != nil {
+			return field.Invalid(field.NewPath("spec", "hostTemplate"),
+				r.Spec.HostTemplate, "invalid host template, please make sure that only the {{Name}}, {{Namespace}}, {{Domain}} are included in the template")
+		}
+	}
+
+	if pathTemplate, err := template.New("path").Parse(r.Spec.PathTemplate); err != nil {
+		return field.Invalid(field.NewPath("spec", "pathTemplate"),
+			r.Spec.HostTemplate, "invalid path template")
+	} else {
+		pathInfoObj := struct {
+			Name      string
+			Namespace string
+		}{Name: r.Name, Namespace: r.Namespace}
+		if err := pathTemplate.Execute(&pathBuffer, pathInfoObj); err != nil {
+			return field.Invalid(field.NewPath("spec", "pathTemplate"),
+				r.Spec.HostTemplate, "invalid path template, please make sure that only the {{Name}} and {{Namespace}} are included in the template")
+		}
 	}
 
 	if r.Spec.GatewayRef == nil && r.Spec.GatewayDef == nil {
