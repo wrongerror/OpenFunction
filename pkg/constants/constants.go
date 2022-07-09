@@ -33,7 +33,9 @@ const (
 	DefaultKnativeServingNamespace      = "knative-serving"
 	DefaultKnativeServingFeaturesCMName = "config-features"
 
-	DefaultGatewayName         v1alpha2.ObjectName = "openfunction"
-	DefaultGatewayNamespace    v1alpha2.Namespace  = "openfunction"
-	DefaultFunctionServicePort v1alpha2.PortNumber = 80
+	DefaultGatewayName             v1alpha2.ObjectName   = "openfunction"
+	DefaultGatewayNamespace        v1alpha2.Namespace    = "openfunction"
+	DefaultGatewayListenerPort     v1alpha2.PortNumber   = 80
+	DefaultGatewayListenerProtocol v1alpha2.ProtocolType = "HTTP"
+	DefaultFunctionServicePort     v1alpha2.PortNumber   = 80
 )

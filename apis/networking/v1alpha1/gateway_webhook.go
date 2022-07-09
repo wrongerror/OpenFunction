@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"bytes"
 	"fmt"
+	"github.com/openfunction/pkg/constants"
 	"k8s.io/apimachinery/pkg/util/json"
 	"text/template"
 
@@ -80,8 +81,8 @@ func (r *Gateway) Default() {
 		internalHttpListener := k8sgatewayapiv1alpha2.Listener{
 			Name:     DefaultHttpListenerName,
 			Hostname: &internalHostname,
-			Port:     80,
-			Protocol: "HTTP",
+			Port:     constants.DefaultGatewayListenerPort,
+			Protocol: constants.DefaultGatewayListenerProtocol,
 			AllowedRoutes: &k8sgatewayapiv1alpha2.AllowedRoutes{
 				Namespaces: &k8sgatewayapiv1alpha2.RouteNamespaces{
 					From: &namespaceFromAll,
@@ -174,7 +175,7 @@ func (r *Gateway) Validate() error {
 			r.Spec.GatewayRef, "specify at most one of gatewayRef and gatewayDef")
 	}
 
-	if len(r.Spec.GatewaySpec.Listeners) == DefaultListenersCount {
+	if len(r.Spec.GatewaySpec.Listeners) == DefaultHttpListenersCount {
 		return field.Required(field.NewPath("spec", "gatewaySpec", "listeners"),
 			"must specify at least one listener")
 	}
