@@ -43,6 +43,7 @@ import (
 	k8sgatewayapiv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	networkingv1alpha1 "github.com/openfunction/apis/networking/v1alpha1"
+	ofngateway "github.com/openfunction/pkg/networking/gateway"
 	"github.com/openfunction/pkg/util"
 )
 
@@ -274,11 +275,11 @@ func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gate
 	if err := json.Unmarshal(gatewayConfigAnnotation, &oldGateway); err != nil {
 		log.Error(err, "Failed to Unmarshal GatewayConfigAnnotation")
 	} else {
-		oldGatewayListenersMapping = convertListenersListToMapping(oldGateway.Spec.GatewaySpec.Listeners)
+		oldGatewayListenersMapping = ofngateway.ConvertListenersListToMapping(oldGateway.Spec.GatewaySpec.Listeners)
 	}
 
-	newGatewayListenersMapping := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
-	k8sGatewayListenersMapping := convertListenersListToMapping(r.k8sGateway.Spec.Listeners)
+	newGatewayListenersMapping := ofngateway.ConvertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+	k8sGatewayListenersMapping := ofngateway.ConvertListenersListToMapping(r.k8sGateway.Spec.Listeners)
 	for name := range oldGatewayListenersMapping {
 		if _, ok := newGatewayListenersMapping[name]; !ok {
 			delete(k8sGatewayListenersMapping, name)
@@ -287,7 +288,7 @@ func (r *GatewayReconciler) reconcileK8sGateway(gateway *networkingv1alpha1.Gate
 	for name, listener := range newGatewayListenersMapping {
 		k8sGatewayListenersMapping[name] = listener
 	}
-	r.k8sGateway.Spec.Listeners = convertListenersMappingToList(k8sGatewayListenersMapping)
+	r.k8sGateway.Spec.Listeners = ofngateway.ConvertListenersMappingToList(k8sGatewayListenersMapping)
 	listenersAnnotation, _ := json.Marshal(gateway.Spec.GatewaySpec.Listeners)
 	if r.k8sGateway.Annotations == nil {
 		r.k8sGateway.Annotations = make(map[string]string)
@@ -342,12 +343,12 @@ func (r *GatewayReconciler) cleanK8sGatewayResources(gateway *networkingv1alpha1
 			}
 			return util.IgnoreNotFound(err)
 		}
-		needRemoveListenersMapping := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
-		k8sGatewayListenersMapping := convertListenersListToMapping(k8sGateway.Spec.Listeners)
+		needRemoveListenersMapping := ofngateway.ConvertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+		k8sGatewayListenersMapping := ofngateway.ConvertListenersListToMapping(k8sGateway.Spec.Listeners)
 		for name := range needRemoveListenersMapping {
 			delete(k8sGatewayListenersMapping, name)
 		}
-		k8sGateway.Spec.Listeners = convertListenersMappingToList(k8sGatewayListenersMapping)
+		k8sGateway.Spec.Listeners = ofngateway.ConvertListenersMappingToList(k8sGatewayListenersMapping)
 		delete(k8sGateway.Annotations, networkingv1alpha1.GatewayListenersAnnotation)
 		if err := r.Update(r.ctx, k8sGateway); err != nil {
 			log.Error(err, "Failed to clean k8s Gateway",
@@ -372,8 +373,8 @@ func (r *GatewayReconciler) cleanK8sGatewayResources(gateway *networkingv1alpha1
 }
 
 func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.Gateway) bool {
-	gatewayListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
-	k8sGatewayListeners := convertListenersListToMapping(r.k8sGateway.Spec.Listeners)
+	gatewayListeners := ofngateway.ConvertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+	k8sGatewayListeners := ofngateway.ConvertListenersListToMapping(r.k8sGateway.Spec.Listeners)
 	for name, gatewayListener := range gatewayListeners {
 		if k8sGatewayListener, ok := k8sGatewayListeners[name]; !ok || !equality.Semantic.DeepEqual(gatewayListener, k8sGatewayListener) {
 			return true
@@ -413,7 +414,7 @@ func (r *GatewayReconciler) updateGatewayAnnotations(gateway *networkingv1alpha1
 
 func (r *GatewayReconciler) syncStatusFromK8sGateway(gateway *networkingv1alpha1.Gateway) {
 	gateway.Status.Conditions = r.k8sGateway.Status.Conditions
-	gatewayListeners := convertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
+	gatewayListeners := ofngateway.ConvertListenersListToMapping(gateway.Spec.GatewaySpec.Listeners)
 	var refreshedGatewayListeners []k8sgatewayapiv1alpha2.ListenerStatus
 	for _, gatewayListener := range r.k8sGateway.Status.Listeners {
 		if _, ok := gatewayListeners[gatewayListener.Name]; ok {
@@ -479,22 +480,6 @@ func (r *GatewayReconciler) updateGatewayStatus(oldStatus *networkingv1alpha1.Ga
 		}
 		log.Info("Updated status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
 	}
-}
-
-func convertListenersListToMapping(listeners []k8sgatewayapiv1alpha2.Listener) map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener {
-	mapping := make(map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener)
-	for _, listener := range listeners {
-		mapping[listener.Name] = listener
-	}
-	return mapping
-}
-
-func convertListenersMappingToList(mapping map[k8sgatewayapiv1alpha2.SectionName]k8sgatewayapiv1alpha2.Listener) []k8sgatewayapiv1alpha2.Listener {
-	var listeners []k8sgatewayapiv1alpha2.Listener
-	for _, listener := range mapping {
-		listeners = append(listeners, listener)
-	}
-	return listeners
 }
 
 // SetupWithManager sets up the controller with the Manager.
