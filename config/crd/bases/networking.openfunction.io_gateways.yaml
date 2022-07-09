@@ -228,7 +228,6 @@ spec:
                 default: '{{.Namespace}}/{{.Name}}'
                 type: string
             required:
-            - clusterDomain
             - domain
             - gatewaySpec
             type: object

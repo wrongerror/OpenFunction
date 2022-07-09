@@ -18,9 +18,10 @@ package v1beta1
 
 import (
 	"fmt"
-	"github.com/openfunction/pkg/constants"
 	"reflect"
 	"regexp"
+
+	"github.com/openfunction/pkg/constants"
 
 	shipwrightv1alpha1 "github.com/shipwright-io/build/pkg/apis/build/v1alpha1"
 	"k8s.io/api/autoscaling/v2beta2"

@@ -8659,7 +8659,6 @@ spec:
                 default: '{{.Namespace}}/{{.Name}}'
                 type: string
             required:
-            - clusterDomain
             - domain
             - gatewaySpec
             type: object
@@ -15882,18 +15881,6 @@ rules:
   - networking.k8s.io
   resources:
   - httproutes
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
   verbs:
   - create
   - delete

@@ -19,9 +19,11 @@ package v1alpha1
 import (
 	"bytes"
 	"fmt"
-	"github.com/openfunction/pkg/constants"
-	"k8s.io/apimachinery/pkg/util/json"
 	"text/template"
+
+	"k8s.io/apimachinery/pkg/util/json"
+
+	"github.com/openfunction/pkg/constants"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
