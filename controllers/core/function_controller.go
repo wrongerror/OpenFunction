@@ -726,7 +726,7 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 			RequestHeaderModifier: &k8sgatewayapiv1alpha2.HTTPRequestHeaderFilter{
 				Add: []k8sgatewayapiv1alpha2.HTTPHeader{{
 					Name:  "Host",
-					Value: fmt.Sprintf("%s.%s.svc.%s", fn.Status.Serving.Service, fn.Namespace, gateway.Spec.ClusterDomain),
+					Value: fmt.Sprintf("%s.%s.svc.%s", knativeService.Status.LatestReadyRevisionName, fn.Namespace, gateway.Spec.ClusterDomain),
 				}},
 			},
 		}
