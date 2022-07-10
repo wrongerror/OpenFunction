@@ -105,7 +105,6 @@ func (r *Gateway) Default() {
 	}
 }
 
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 //+kubebuilder:webhook:path=/validate-networking-openfunction-io-v1alpha1-gateway,mutating=false,failurePolicy=fail,sideEffects=None,groups=networking.openfunction.io,resources=gateways,verbs=create;update,versions=v1alpha1,name=vgateway.of.io,admissionReviewVersions=v1
 
 var _ webhook.Validator = &Gateway{}
@@ -126,7 +125,6 @@ func (r *Gateway) ValidateUpdate(old runtime.Object) error {
 func (r *Gateway) ValidateDelete() error {
 	gatewaylog.Info("validate delete", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object deletion.
 	return nil
 }
 

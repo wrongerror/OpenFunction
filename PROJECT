@@ -98,14 +98,6 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
-  domain: openfunction.io
-  group: core
-  kind: Domain
-  path: github.com/openfunction/apis/core/v1beta1
-  version: v1beta1
-- api:
-    crdVersion: v1
-    namespaced: true
   controller: true
   domain: openfunction.io
   group: networking

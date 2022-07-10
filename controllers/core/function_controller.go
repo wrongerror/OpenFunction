@@ -847,8 +847,6 @@ func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
 	}
 	if len(httpRoute.Status.RouteStatus.Parents) != 0 {
 		fn.Status.Route.Conditions = httpRoute.Status.Parents[0].Conditions
-	} else {
-		// todo
 	}
 	fn.Status.Route.Hosts = httpRoute.Spec.Hostnames
 	for _, httpRule := range httpRoute.Spec.Rules {

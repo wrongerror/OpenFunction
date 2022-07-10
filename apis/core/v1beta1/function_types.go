@@ -295,10 +295,6 @@ type FunctionStatus struct {
 	// Addresses holds the addresses that used to access the Function.
 	// +optional
 	Addresses []FunctionAddress `json:"addresses,omitempty"`
-	// URL holds the url that used to access the Function.
-	// It generally has the form http://{domain-name}.{domain-namespace}:{domain-port}/{function-namespace}/{function-name}
-	// +optional
-	URL string `json:"URL,omitempty"`
 }
 
 //+genclient
