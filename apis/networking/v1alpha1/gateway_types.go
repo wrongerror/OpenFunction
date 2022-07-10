@@ -28,7 +28,7 @@ const (
 	DefaultHttpListenersCount    = 1
 	DefaultHttpListenerName      = "ofn-http-internal"
 	GatewayConfigAnnotation      = "networking.openfunction.io/last-applied-configuration"
-	GatewayListenersAnnotation   = "networking.openfunction.io/inject-listeners"
+	GatewayListenersAnnotation   = "networking.openfunction.io/injected-listeners"
 	DefaultGatewayServiceName    = "gateway"
 	DefaultK8sGatewayServiceName = "envoy"
 )
