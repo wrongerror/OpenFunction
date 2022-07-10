@@ -355,7 +355,9 @@ func (r *GatewayReconciler) cleanK8sGatewayResources(gateway *networkingv1alpha1
 			delete(k8sGatewayListenersMapping, name)
 		}
 		k8sGateway.Spec.Listeners = ofngateway.ConvertListenersMappingToList(k8sGatewayListenersMapping)
-		delete(k8sGateway.Annotations, networkingv1alpha1.GatewayListenersAnnotation)
+		if k8sGateway.Annotations != nil {
+			delete(k8sGateway.Annotations, networkingv1alpha1.GatewayListenersAnnotation)
+		}
 		if err := r.Update(r.ctx, k8sGateway); err != nil {
 			log.Error(err, "Failed to clean k8s Gateway",
 				"namespace", gateway.Spec.GatewayRef.Namespace, "name", gateway.Spec.GatewayRef.Name)
