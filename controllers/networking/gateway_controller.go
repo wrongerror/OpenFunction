@@ -395,6 +395,7 @@ func (r *GatewayReconciler) needReconcileK8sGateway(gateway *networkingv1alpha1.
 func (r *GatewayReconciler) updateGatewayAnnotations(gateway *networkingv1alpha1.Gateway) error {
 	log := r.Log.WithName("updateGatewayAnnotations")
 	var oldGateway networkingv1alpha1.Gateway
+
 	oldGatewayConfigAnnotation := []byte(gateway.Annotations[networkingv1alpha1.GatewayConfigAnnotation])
 	if err := json.Unmarshal(oldGatewayConfigAnnotation, &oldGateway); err != nil {
 		log.Error(err, "Failed to Unmarshal GatewayConfigAnnotation")
@@ -402,7 +403,7 @@ func (r *GatewayReconciler) updateGatewayAnnotations(gateway *networkingv1alpha1
 	if equality.Semantic.DeepEqual(oldGateway.Spec, gateway.Spec) {
 		return nil
 	}
-	gatewayConfigAnnotation, _ := json.Marshal(gateway)
+	gatewayConfigAnnotation, _ := json.Marshal(networkingv1alpha1.Gateway{Spec: gateway.Spec})
 	gateway.Annotations[networkingv1alpha1.GatewayConfigAnnotation] = string(gatewayConfigAnnotation)
 	if err := r.Update(r.ctx, gateway); err != nil {
 		log.Error(err, "Failed to update annotations on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
