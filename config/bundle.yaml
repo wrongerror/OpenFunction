@@ -4530,8 +4530,8 @@ spec:
     - jsonPath: .status.serving.resourceRef
       name: Serving
       type: string
-    - jsonPath: .status.url
-      name: URL
+    - jsonPath: .status.addresses[*].value
+      name: Address
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
