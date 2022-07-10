@@ -678,11 +678,12 @@ func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) 
 		parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayDef.Namespace)
 	}
 
+	httpRouteLabelValue := fmt.Sprintf("%s-%s", gateway.Namespace, gateway.Name)
 	httpRoute := &k8sgatewayapiv1alpha2.HTTPRoute{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: fn.Namespace,
 			Name:      fn.Name,
-			Labels:    map[string]string{gateway.Spec.HttpRouteLabelKey: client.ObjectKeyFromObject(gateway).String()},
+			Labels:    map[string]string{gateway.Spec.HttpRouteLabelKey: httpRouteLabelValue},
 		},
 		Spec: k8sgatewayapiv1alpha2.HTTPRouteSpec{
 			CommonRouteSpec: k8sgatewayapiv1alpha2.CommonRouteSpec{
