@@ -4530,7 +4530,7 @@ spec:
     - jsonPath: .status.serving.resourceRef
       name: Serving
       type: string
-    - jsonPath: .status.addresses[*].value
+    - jsonPath: .status.addresses[?(@.type=="External")].value
       name: Address
       type: string
     - jsonPath: .metadata.creationTimestamp
