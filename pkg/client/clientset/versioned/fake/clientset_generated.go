@@ -18,12 +18,6 @@ limitations under the License.
 package fake
 
 import (
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/discovery"
-	fakediscovery "k8s.io/client-go/discovery/fake"
-	"k8s.io/client-go/testing"
-
 	clientset "github.com/openfunction/pkg/client/clientset/versioned"
 	corev1alpha2 "github.com/openfunction/pkg/client/clientset/versioned/typed/core/v1alpha2"
 	fakecorev1alpha2 "github.com/openfunction/pkg/client/clientset/versioned/typed/core/v1alpha2/fake"
@@ -31,6 +25,13 @@ import (
 	fakecorev1beta1 "github.com/openfunction/pkg/client/clientset/versioned/typed/core/v1beta1/fake"
 	eventsv1alpha1 "github.com/openfunction/pkg/client/clientset/versioned/typed/events/v1alpha1"
 	fakeeventsv1alpha1 "github.com/openfunction/pkg/client/clientset/versioned/typed/events/v1alpha1/fake"
+	networkingv1alpha1 "github.com/openfunction/pkg/client/clientset/versioned/typed/networking/v1alpha1"
+	fakenetworkingv1alpha1 "github.com/openfunction/pkg/client/clientset/versioned/typed/networking/v1alpha1/fake"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/discovery"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	"k8s.io/client-go/testing"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -93,4 +94,9 @@ func (c *Clientset) CoreV1beta1() corev1beta1.CoreV1beta1Interface {
 // EventsV1alpha1 retrieves the EventsV1alpha1Client
 func (c *Clientset) EventsV1alpha1() eventsv1alpha1.EventsV1alpha1Interface {
 	return &fakeeventsv1alpha1.FakeEventsV1alpha1{Fake: &c.Fake}
+}
+
+// NetworkingV1alpha1 retrieves the NetworkingV1alpha1Client
+func (c *Clientset) NetworkingV1alpha1() networkingv1alpha1.NetworkingV1alpha1Interface {
+	return &fakenetworkingv1alpha1.FakeNetworkingV1alpha1{Fake: &c.Fake}
 }
