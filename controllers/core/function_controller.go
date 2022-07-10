@@ -20,12 +20,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/fields"
 	"net/url"
 	"sort"
 	"strings"
 	"text/template"
 	"time"
+
+	"k8s.io/apimachinery/pkg/fields"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
