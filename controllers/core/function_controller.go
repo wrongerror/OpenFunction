@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	kservingv1 "knative.dev/serving/pkg/apis/serving/v1"
 	"net/url"
 	"sort"
 	"strings"
@@ -671,10 +672,22 @@ func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) 
 		return err
 	}
 
+	knativeService := &kservingv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fn.Status.Serving.Service,
+			Namespace: fn.Namespace,
+		},
+	}
+	if err := r.Get(r.ctx, client.ObjectKeyFromObject(knativeService), knativeService); err != nil {
+		log.Error(err, "Failed to get knative service",
+			"namespace", fn.Namespace, "name", fn.Status.Serving.Service)
+		return err
+	}
+
 	httpRoute := &k8sgatewayapiv1alpha2.HTTPRoute{
 		ObjectMeta: metav1.ObjectMeta{Namespace: fn.Namespace, Name: fn.Name},
 	}
-	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, httpRoute, r.mutateHTTPRoute(fn, gateway, httpRoute))
+	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, httpRoute, r.mutateHTTPRoute(fn, knativeService, gateway, httpRoute))
 	if err != nil {
 		log.Error(err, "Failed to CreateOrUpdate HTTPRoute")
 		return err
@@ -698,6 +711,7 @@ func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) 
 
 func (r *FunctionReconciler) mutateHTTPRoute(
 	fn *openfunction.Function,
+	knativeService *kservingv1.Service,
 	gateway *networkingv1alpha1.Gateway,
 	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute) controllerutil.MutateFn {
 	return func() error {
@@ -767,7 +781,7 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 					{
 						BackendRef: k8sgatewayapiv1alpha2.BackendRef{
 							BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
-								Name:      k8sgatewayapiv1alpha2.ObjectName(fn.Status.Serving.Service),
+								Name:      k8sgatewayapiv1alpha2.ObjectName(knativeService.Status.LatestReadyRevisionName),
 								Namespace: &namespace,
 								Port:      &port,
 							},
@@ -782,7 +796,7 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 				rule.BackendRefs = []k8sgatewayapiv1alpha2.HTTPBackendRef{{
 					BackendRef: k8sgatewayapiv1alpha2.BackendRef{
 						BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
-							Name:      k8sgatewayapiv1alpha2.ObjectName(fn.Status.Serving.Service),
+							Name:      k8sgatewayapiv1alpha2.ObjectName(knativeService.Status.LatestReadyRevisionName),
 							Namespace: &namespace,
 							Port:      &port,
 						},
