@@ -31,9 +31,6 @@ const (
 	GatewayListenersAnnotation   = "networking.openfunction.io/inject-listeners"
 	DefaultGatewayServiceName    = "gateway"
 	DefaultK8sGatewayServiceName = "envoy"
-	GatewayFinalizerName         = "networking.openfunction.io/finalizer"
-	GatewayIndexField            = ".spec.gatewayRef.Index"
-	K8sGatewayIndexField         = ".spec.gatewayClassName"
 )
 
 const (

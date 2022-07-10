@@ -47,6 +47,12 @@ import (
 	"github.com/openfunction/pkg/util"
 )
 
+const (
+	GatewayField         = ".spec.gatewayRef"
+	K8sGatewayField      = ".spec.gatewayClassName"
+	GatewayFinalizerName = "networking.openfunction.io/finalizer"
+)
+
 // GatewayReconciler reconciles a Gateway object
 type GatewayReconciler struct {
 	client.Client
@@ -87,18 +93,18 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if gateway.ObjectMeta.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(gateway, networkingv1alpha1.GatewayFinalizerName) {
-			controllerutil.AddFinalizer(gateway, networkingv1alpha1.GatewayFinalizerName)
+		if !controllerutil.ContainsFinalizer(gateway, GatewayFinalizerName) {
+			controllerutil.AddFinalizer(gateway, GatewayFinalizerName)
 			if err := r.Update(ctx, gateway); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
 	} else {
-		if controllerutil.ContainsFinalizer(gateway, networkingv1alpha1.GatewayFinalizerName) {
+		if controllerutil.ContainsFinalizer(gateway, GatewayFinalizerName) {
 			if err := r.cleanK8sGatewayResources(gateway); err != nil {
 				return ctrl.Result{}, err
 			}
-			controllerutil.RemoveFinalizer(gateway, networkingv1alpha1.GatewayFinalizerName)
+			controllerutil.RemoveFinalizer(gateway, GatewayFinalizerName)
 			if err := r.Update(ctx, gateway); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -201,7 +207,7 @@ func (r *GatewayReconciler) createK8sGateway(gateway *networkingv1alpha1.Gateway
 	if !networkingv1alpha1.GatewayCompatibilities[string(gatewayClassName)]["allowMultipleGateway"] {
 		k8sGateways := k8sgatewayapiv1alpha2.GatewayList{}
 		listOps := &client.ListOptions{
-			FieldSelector: fields.OneTermEqualSelector(networkingv1alpha1.K8sGatewayIndexField, string(gatewayClassName)),
+			FieldSelector: fields.OneTermEqualSelector(K8sGatewayField, string(gatewayClassName)),
 		}
 		if err := r.List(r.ctx, &k8sGateways, listOps); err != nil {
 			log.Error(err, "Failed to list k8s Gateway", "gatewayClassName", gatewayClassName)
@@ -485,7 +491,7 @@ func (r *GatewayReconciler) updateGatewayStatus(oldStatus *networkingv1alpha1.Ga
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &networkingv1alpha1.Gateway{}, networkingv1alpha1.GatewayIndexField, func(rawObj client.Object) []string {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &networkingv1alpha1.Gateway{}, GatewayField, func(rawObj client.Object) []string {
 		gateway := rawObj.(*networkingv1alpha1.Gateway)
 		if gateway.Spec.GatewayRef != nil {
 			return []string{fmt.Sprintf("%s,%s", gateway.Spec.GatewayRef.Namespace, gateway.Spec.GatewayRef.Name)}
@@ -498,7 +504,7 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &k8sgatewayapiv1alpha2.Gateway{}, networkingv1alpha1.K8sGatewayIndexField, func(rawObj client.Object) []string {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &k8sgatewayapiv1alpha2.Gateway{}, K8sGatewayField, func(rawObj client.Object) []string {
 		k8sGateway := rawObj.(*k8sgatewayapiv1alpha2.Gateway)
 		return []string{string(k8sGateway.Spec.GatewayClassName)}
 	}); err != nil {
@@ -517,7 +523,7 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *GatewayReconciler) findObjectsForK8sGateway(k8sGateway client.Object) []reconcile.Request {
 	attachedGateways := &networkingv1alpha1.GatewayList{}
 	listOps := &client.ListOptions{
-		FieldSelector: fields.OneTermEqualSelector(networkingv1alpha1.GatewayIndexField, fmt.Sprintf("%s,%s", k8sGateway.GetNamespace(), k8sGateway.GetName())),
+		FieldSelector: fields.OneTermEqualSelector(GatewayField, fmt.Sprintf("%s,%s", k8sGateway.GetNamespace(), k8sGateway.GetName())),
 	}
 	err := r.List(context.TODO(), attachedGateways, listOps)
 	if err != nil {

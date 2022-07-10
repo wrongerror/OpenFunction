@@ -88,8 +88,8 @@ func (r *Function) Default() {
 		r.Spec.Version = &version
 	}
 
-	if r.Spec.Route == nil || r.Spec.Route.GatewayRef == nil {
-		namespace := constants.DefaultGatewayNamespace
+	namespace := constants.DefaultGatewayNamespace
+	if r.Spec.Route == nil {
 		route := RouteImpl{
 			CommonRouteSpec: CommonRouteSpec{
 				GatewayRef: &GatewayRef{
@@ -99,6 +99,8 @@ func (r *Function) Default() {
 			},
 		}
 		r.Spec.Route = &route
+	} else if r.Spec.Route.GatewayRef == nil {
+		r.Spec.Route.GatewayRef = &GatewayRef{Name: constants.DefaultGatewayName, Namespace: &namespace}
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/fields"
 	"net/url"
 	"sort"
 	"strings"
@@ -50,6 +51,8 @@ import (
 	"github.com/openfunction/pkg/constants"
 	"github.com/openfunction/pkg/util"
 )
+
+const GatewayField = ".spec.route.gatewayRef"
 
 // FunctionReconciler reconciles a Function object
 type FunctionReconciler struct {
@@ -957,10 +960,18 @@ func (r *FunctionReconciler) cleanExpiredBuilder() {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *FunctionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &openfunction.Function{}, GatewayField, func(rawObj client.Object) []string {
+		fn := rawObj.(*openfunction.Function)
+		return []string{fmt.Sprintf("%s,%s", *fn.Spec.Route.GatewayRef.Namespace, fn.Spec.Route.GatewayRef.Name)}
+	}); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&openfunction.Function{}).
 		Owns(&openfunction.Builder{}).
 		Owns(&openfunction.Serving{}).
+		Owns(&corev1.Service{}).
+		Owns(&k8sgatewayapiv1alpha2.HTTPRoute{}).
 		Watches(
 			&source.Kind{Type: &networkingv1alpha1.Gateway{}},
 			handler.EnqueueRequestsFromMapFunc(r.findObjectsForGateway),
@@ -971,9 +982,8 @@ func (r *FunctionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *FunctionReconciler) findObjectsForGateway(gateway client.Object) []reconcile.Request {
 	attachedFunctions := &openfunction.FunctionList{}
-	listOps := client.MatchingFields{
-		".spec.route.gatewayRef.namespace": gateway.GetNamespace(),
-		".spec.route.gatewayRef.name":      gateway.GetName(),
+	listOps := &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector(GatewayField, fmt.Sprintf("%s,%s", gateway.GetNamespace(), gateway.GetName())),
 	}
 	err := r.List(context.TODO(), attachedFunctions, listOps)
 	if err != nil {
