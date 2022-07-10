@@ -18,16 +18,14 @@ limitations under the License.
 package v1beta1
 
 import (
-	rest "k8s.io/client-go/rest"
-
 	v1beta1 "github.com/openfunction/apis/core/v1beta1"
 	"github.com/openfunction/pkg/client/clientset/versioned/scheme"
+	rest "k8s.io/client-go/rest"
 )
 
 type CoreV1beta1Interface interface {
 	RESTClient() rest.Interface
 	BuildersGetter
-	DomainsGetter
 	FunctionsGetter
 	ServingsGetter
 }
@@ -39,10 +37,6 @@ type CoreV1beta1Client struct {
 
 func (c *CoreV1beta1Client) Builders(namespace string) BuilderInterface {
 	return newBuilders(c, namespace)
-}
-
-func (c *CoreV1beta1Client) Domains(namespace string) DomainInterface {
-	return newDomains(c, namespace)
 }
 
 func (c *CoreV1beta1Client) Functions(namespace string) FunctionInterface {

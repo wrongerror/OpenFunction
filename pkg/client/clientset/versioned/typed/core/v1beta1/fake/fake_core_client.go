@@ -18,10 +18,9 @@ limitations under the License.
 package fake
 
 import (
+	v1beta1 "github.com/openfunction/pkg/client/clientset/versioned/typed/core/v1beta1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
-
-	v1beta1 "github.com/openfunction/pkg/client/clientset/versioned/typed/core/v1beta1"
 )
 
 type FakeCoreV1beta1 struct {
@@ -30,10 +29,6 @@ type FakeCoreV1beta1 struct {
 
 func (c *FakeCoreV1beta1) Builders(namespace string) v1beta1.BuilderInterface {
 	return &FakeBuilders{c, namespace}
-}
-
-func (c *FakeCoreV1beta1) Domains(namespace string) v1beta1.DomainInterface {
-	return &FakeDomains{c, namespace}
 }
 
 func (c *FakeCoreV1beta1) Functions(namespace string) v1beta1.FunctionInterface {
