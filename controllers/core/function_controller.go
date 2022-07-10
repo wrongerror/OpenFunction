@@ -20,12 +20,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	kservingv1 "knative.dev/serving/pkg/apis/serving/v1"
 	"net/url"
 	"sort"
 	"strings"
 	"text/template"
 	"time"
+
+	kservingv1 "knative.dev/serving/pkg/apis/serving/v1"
 
 	"k8s.io/apimachinery/pkg/fields"
 
