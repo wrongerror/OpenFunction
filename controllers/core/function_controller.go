@@ -670,34 +670,9 @@ func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) 
 			"namespace", fn.Spec.Route.GatewayRef.Namespace, "name", fn.Spec.Route.GatewayRef.Name)
 		return err
 	}
-	var parentRefName k8sgatewayapiv1alpha2.ObjectName
-	var parentRefNamespace k8sgatewayapiv1alpha2.Namespace
-	if gateway.Spec.GatewayRef != nil {
-		parentRefName = k8sgatewayapiv1alpha2.ObjectName(gateway.Spec.GatewayRef.Name)
-		parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayRef.Namespace)
 
-	}
-	if gateway.Spec.GatewayDef != nil {
-		parentRefName = k8sgatewayapiv1alpha2.ObjectName(gateway.Spec.GatewayDef.Name)
-		parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayDef.Namespace)
-	}
-
-	httpRouteLabelValue := fmt.Sprintf("%s-%s", gateway.Namespace, gateway.Name)
 	httpRoute := &k8sgatewayapiv1alpha2.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: fn.Namespace,
-			Name:      fn.Name,
-			Labels:    map[string]string{gateway.Spec.HttpRouteLabelKey: httpRouteLabelValue},
-		},
-		Spec: k8sgatewayapiv1alpha2.HTTPRouteSpec{
-			CommonRouteSpec: k8sgatewayapiv1alpha2.CommonRouteSpec{
-				ParentRefs: []k8sgatewayapiv1alpha2.ParentRef{
-					{Namespace: &parentRefNamespace, Name: parentRefName},
-				},
-			},
-			Hostnames: []k8sgatewayapiv1alpha2.Hostname{},
-			Rules:     []k8sgatewayapiv1alpha2.HTTPRouteRule{},
-		},
+		ObjectMeta: metav1.ObjectMeta{Namespace: fn.Namespace, Name: fn.Name},
 	}
 	op, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, httpRoute, r.mutateHTTPRoute(fn, gateway, httpRoute))
 	if err != nil {
@@ -740,6 +715,17 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 					Value: fmt.Sprintf("%s.%s.svc.%s", fn.Status.Serving.Service, fn.Namespace, gateway.Spec.ClusterDomain),
 				}},
 			},
+		}
+		var parentRefName k8sgatewayapiv1alpha2.ObjectName
+		var parentRefNamespace k8sgatewayapiv1alpha2.Namespace
+		if gateway.Spec.GatewayRef != nil {
+			parentRefName = k8sgatewayapiv1alpha2.ObjectName(gateway.Spec.GatewayRef.Name)
+			parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayRef.Namespace)
+
+		}
+		if gateway.Spec.GatewayDef != nil {
+			parentRefName = k8sgatewayapiv1alpha2.ObjectName(gateway.Spec.GatewayDef.Name)
+			parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayDef.Namespace)
 		}
 
 		if fn.Spec.Route.Hostnames == nil {
@@ -804,6 +790,15 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 				rule.Filters = append(rule.Filters, filter)
 				rules = append(rules, rule)
 			}
+		}
+		httpRouteLabelValue := fmt.Sprintf("%s-%s", gateway.Namespace, gateway.Name)
+		if httpRoute.Labels == nil {
+			httpRoute.Labels = map[string]string{gateway.Spec.HttpRouteLabelKey: httpRouteLabelValue}
+		} else {
+			httpRoute.Labels[gateway.Spec.HttpRouteLabelKey] = httpRouteLabelValue
+		}
+		httpRoute.Spec.ParentRefs = []k8sgatewayapiv1alpha2.ParentRef{
+			{Namespace: &parentRefNamespace, Name: parentRefName},
 		}
 		httpRoute.Spec.Hostnames = hostnames
 		httpRoute.Spec.Rules = rules
