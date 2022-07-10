@@ -7164,8 +7164,6 @@ spec:
             type: object
           status:
             properties:
-              URL:
-                type: string
               addresses:
                 items:
                   properties:

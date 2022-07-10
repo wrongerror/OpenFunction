@@ -76,26 +76,6 @@ rules:
 - apiGroups:
   - core.openfunction.io
   resources:
-  - domains
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - core.openfunction.io
-  resources:
-  - domains/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - core.openfunction.io
-  resources:
   - functions
   verbs:
   - create
