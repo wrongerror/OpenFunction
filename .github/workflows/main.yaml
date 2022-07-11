@@ -124,7 +124,6 @@ jobs:
       - name: Install OpenFunction
         run: |
           kubectl apply -f config/bundle.yaml
-          kubectl apply -f config/domain/default-domain.yaml
           kubectl apply -f config/strategy/build-strategy.yaml
           kubectl patch deployments.apps -n openfunction openfunction-controller-manager -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"openfunction\",\"image\":\"kind-registry:5000/openfunction/openfunction:latest\",\"resources\":null}]}}}}"
           kubectl rollout status -n openfunction deployment openfunction-controller-manager --timeout=1m
