@@ -895,9 +895,10 @@ func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
 	if !equality.Semantic.DeepEqual(oldRouteStatus, fn.Status.Route) {
 		if err := r.Status().Update(r.ctx, fn); err != nil {
 			log.Error(err, "Failed to update status on function", "namespace", fn.Namespace, "name", fn.Name)
+		} else {
+			log.Info("Updated status on function", "namespace", fn.Namespace,
+				"name", fn.Name, "resource version", fn.ResourceVersion)
 		}
-		log.Info("Updated status on function", "namespace", fn.Namespace,
-			"name", fn.Name, "resource version", fn.ResourceVersion)
 	}
 }
 

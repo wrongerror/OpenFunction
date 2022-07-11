@@ -486,8 +486,9 @@ func (r *GatewayReconciler) updateGatewayStatus(oldStatus *networkingv1alpha1.Ga
 	if !equality.Semantic.DeepEqual(oldStatus, gateway.Status) {
 		if err := r.Status().Update(r.ctx, gateway); err != nil {
 			log.Error(err, "Failed to update status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
+		} else {
+			log.Info("Updated status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
 		}
-		log.Info("Updated status on Gateway", "namespace", gateway.Namespace, "name", gateway.Name)
 	}
 }
 
@@ -518,6 +519,7 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&source.Kind{Type: &k8sgatewayapiv1alpha2.Gateway{}},
 			handler.EnqueueRequestsFromMapFunc(r.findObjectsForK8sGateway),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
 		Complete(r)
 }
