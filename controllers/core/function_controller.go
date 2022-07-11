@@ -112,7 +112,6 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		if util.IsNotFound(err) {
 			log.V(1).Info("Function deleted")
-			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{}, util.IgnoreNotFound(err)
