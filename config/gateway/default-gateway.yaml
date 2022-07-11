@@ -1,3 +1,4 @@
+---
 apiVersion: networking.openfunction.io/v1alpha1
 kind: Gateway
 metadata:
