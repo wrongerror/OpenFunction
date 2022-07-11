@@ -98,6 +98,10 @@ jobs:
       - name: Create kind cluster
         uses: container-tools/kind-action@v1
 
+      - name: Create busybox pod
+        run: |
+          kubectl run curl --image=radial/busyboxplus:curl -i --tty
+
       - name: Install dependent components
         run: |
           chmod a+x ./hack/deploy.sh

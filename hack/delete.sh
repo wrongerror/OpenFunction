@@ -72,7 +72,6 @@ if [ "${all}" = "true" ]; then
   with_shipwright=true
   with_knative=true
   with_openFuncAsync=true
-  with_ingress=true
 fi
 
 if [ "${with_shipwright}" = "true" ]; then
@@ -87,10 +86,11 @@ fi
 
 if [ "${with_knative}" = "true" ]; then
   if [ "${region_cn}" = "false" ]; then
-    kubectl delete -f https://github.com/knative/serving/releases/download/v0.26.0/serving-crds.yaml
-    kubectl delete -f https://github.com/knative/serving/releases/download/v0.26.0/serving-core.yaml
-    kubectl delete -f https://github.com/knative/net-kourier/releases/download/v0.26.0/kourier.yaml
-    kubectl delete -f https://github.com/knative/serving/releases/download/v0.26.0/serving-default-domain.yaml
+    kubectl delete -f https://github.com/knative/serving/releases/download/knative-v1.3.2/serving-crds.yaml
+    kubectl delete -f https://github.com/knative/serving/releases/download/knative-v1.3.2/serving-core.yaml
+    kubectl delete -f https://github.com/knative/net-contour/releases/download/knative-v1.3.0/contour.yaml
+    kubectl delete -f https://github.com/knative/net-contour/releases/download/knative-v1.3.0/net-contour.yaml
+    kubectl delete -f https://github.com/knative/serving/releases/download/knative-v1.3.2/serving-default-domain.yaml
   else
     kubectl delete -f https://openfunction.sh1a.qingstor.com/knative/serving/v0.26.0/serving-crds.yaml
     kubectl delete -f https://openfunction.sh1a.qingstor.com/knative/serving/v0.26.0/serving-core.yaml
@@ -116,13 +116,5 @@ if [ "${with_openFuncAsync}" = "true" ]; then
     kubectl delete ns dapr-system
     # Installs the latest release version
     kubectl delete -f https://openfunction.sh1a.qingstor.com/v2.4.0/keda-2.4.0.yaml
-  fi
-fi
-
-if [ "${with_ingress}" = "true" ]; then
-  if [ "${region_cn}" = "false" ]; then
-    kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
-  else
-    kubectl delete -f https://openfunction.sh1a.qingstor.com/ingress-nginx/deploy/static/provider/cloud/deploy.yaml
   fi
 fi

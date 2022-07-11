@@ -19,7 +19,6 @@ with_cert_manager=false
 with_shipwright=false
 with_knative=false
 with_openFuncAsync=false
-with_ingress=false
 region_cn=false
 
 # add help information
@@ -28,12 +27,11 @@ then
   clear
   echo "-----------------------------------------------------------------------------------------------"
   echo "This shell script used to deploy OpenFunction components in your Cluster"
-  echo "--all Will install cert_manager shipwright knative openFuncAsync nginx-ingress components"
+  echo "--all Will install cert_manager shipwright knative openFuncAsync components"
   echo "--with-cert-manager Will install cert-manager component"
   echo "--with-shipwright Will install shipwright component"
   echo "--with-knative Will install knative component"
   echo "--with-openFuncAsync Will install dapr and keda components"
-  echo "--with-ingress Will install nginx-ingress component"
   echo "-p If you can't access the github repo"
   echo "-----------------------------------------------------------------------------------------------"
   exit 0
@@ -61,9 +59,6 @@ while test $# -gt 0; do
   --with-openFuncAsync)
     with_openFuncAsync=true
     ;;
-  --with-ingress)
-    with_ingress=true
-    ;;
   -p | --region-cn)
     region_cn=true
     ;;
@@ -80,7 +75,6 @@ if [ "${all}" = "true" ]; then
   with_shipwright=true
   with_knative=true
   with_openFuncAsync=true
-  with_ingress=true
 fi
 
 if [ "${with_cert_manager}" = "true" ]; then
@@ -108,19 +102,21 @@ fi
 if [ "${with_knative}" = "true" ]; then
   if [ "${region_cn}" = "false" ]; then
     # Install the required custom resources
-    kubectl apply -f https://github.com/knative/serving/releases/download/v0.26.0/serving-crds.yaml
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.3.2/serving-crds.yaml
     # Install the core components of Serving
-    kubectl apply -f https://github.com/knative/serving/releases/download/v0.26.0/serving-core.yaml
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.3.2/serving-core.yaml
     # Install a networking layer
-    # Install the Knative Kourier controller
-    kubectl apply -f https://github.com/knative/net-kourier/releases/download/v0.26.0/kourier.yaml
-    # To configure Knative Serving to use Kourier by default
+    # Install a properly configured Contour
+    kubectl apply -f https://github.com/knative/net-contour/releases/download/knative-v1.3.0/contour.yaml
+    # Install the Knative Contour controller
+    kubectl apply -f https://github.com/knative/net-contour/releases/download/knative-v1.3.0/net-contour.yaml
+    # To configure Knative Serving to use Contour by default
     kubectl patch configmap/config-network \
       --namespace knative-serving \
       --type merge \
-      --patch '{"data":{"ingress.class":"kourier.ingress.networking.knative.dev"}}'
+      --patch '{"data":{"ingress.class":"contour.ingress.networking.knative.dev"}}'
     # Configure DNS
-    kubectl apply -f https://github.com/knative/serving/releases/download/v0.26.0/serving-default-domain.yaml
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.3.2/serving-default-domain.yaml
   else
     # Install the required custom resources
     kubectl apply -f https://openfunction.sh1a.qingstor.com/knative/serving/v0.26.0/serving-crds.yaml
@@ -157,11 +153,4 @@ if [ "${with_openFuncAsync}" = "true" ]; then
   fi
 fi
 
-if [ "${with_ingress}" = "true" ]; then
-  if [ "${region_cn}" = "false" ]; then
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
-  else
-    kubectl apply -f https://openfunction.sh1a.qingstor.com/ingress-nginx/deploy/static/provider/cloud/deploy.yaml
-  fi
-fi
 
