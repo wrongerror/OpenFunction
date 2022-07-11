@@ -807,7 +807,7 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 				rules = append(rules, rule)
 			}
 		}
-		httpRouteLabelValue := fmt.Sprintf("%s-%s", gateway.Namespace, gateway.Name)
+		httpRouteLabelValue := fmt.Sprintf("%s.%s", gateway.Namespace, gateway.Name)
 		if httpRoute.Labels == nil {
 			httpRoute.Labels = map[string]string{gateway.Spec.HttpRouteLabelKey: httpRouteLabelValue}
 		} else {

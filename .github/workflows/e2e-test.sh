@@ -30,7 +30,7 @@ function knative_function() {
 
   url="http://function-sample-serving-only.default.svc.cluster.local/world"
   while /bin/true; do
-    res=$(kubectl exec -it curl -- curl -I -m 10 -o /dev/null -s -w %{http_code}"\n" $url)
+    res=$(kubectl exec curl -- curl -I -m 10 -o /dev/null -s -w %{http_code}"\n" $url)
     if test "$res" = "200"; then
       echo "Knative function tested successfully!"
       kubectl delete -f config/samples/function-sample-serving-only.yaml
@@ -56,7 +56,7 @@ function knative_function_with_dapr() {
 
   url="http://function-front.default.ofn.io/"
   while /bin/true; do
-    res=$(kubectl exec -it curl -- curl -m 10 -o /dev/null -s -w %{http_code}"\n" -d '{"message":"Awesome OpenFunction!"}' -H "Content-Type: application/json" -X POST $url)
+    res=$(kubectl exec curl -- curl -m 10 -o /dev/null -s -w %{http_code}"\n" -d '{"message":"Awesome OpenFunction!"}' -H "Content-Type: application/json" -X POST $url)
     if test "$res" = "200"; then
       break
     fi
