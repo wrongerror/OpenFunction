@@ -459,15 +459,13 @@ func (r *GatewayReconciler) mutateService(
 		if r.k8sGateway != nil {
 			var servicePorts []corev1.ServicePort
 			for _, listener := range gateway.Spec.GatewaySpec.Listeners {
-				if !strings.HasSuffix(string(*listener.Hostname), gateway.Spec.ClusterDomain) {
-					servicePort := corev1.ServicePort{
-						Name:       string(listener.Name),
-						Protocol:   corev1.ProtocolTCP,
-						Port:       int32(listener.Port),
-						TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: int32(listener.Port)},
-					}
-					servicePorts = append(servicePorts, servicePort)
+				servicePort := corev1.ServicePort{
+					Name:       string(listener.Name),
+					Protocol:   corev1.ProtocolTCP,
+					Port:       int32(listener.Port),
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: int32(listener.Port)},
 				}
+				servicePorts = append(servicePorts, servicePort)
 			}
 			service.Spec.Type = corev1.ServiceTypeExternalName
 			service.Spec.Ports = servicePorts

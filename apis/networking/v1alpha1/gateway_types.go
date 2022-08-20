@@ -26,7 +26,7 @@ import (
 
 const (
 	DefaultHttpListenersCount    = 1
-	DefaultHttpListenerName      = "ofn-http-internal"
+	DefaultHttpListenerName      = "ofn-http"
 	GatewayConfigAnnotation      = "networking.openfunction.io/last-applied-configuration"
 	GatewayListenersAnnotation   = "networking.openfunction.io/injected-listeners"
 	DefaultGatewayServiceName    = "gateway"

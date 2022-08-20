@@ -19,6 +19,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -32,6 +33,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
@@ -56,6 +58,7 @@ import (
 )
 
 const GatewayField = ".spec.route.gatewayRef"
+const MagicDNS = "sslip.io"
 
 // FunctionReconciler reconciles a Function object
 type FunctionReconciler struct {
@@ -727,27 +730,111 @@ func (r *FunctionReconciler) createOrUpdateHTTPRoute(fn *openfunction.Function) 
 	return nil
 }
 
+func (r *FunctionReconciler) generateHTTPRouteRules(
+	fn *openfunction.Function,
+	knativeService *kservingv1.Service,
+	gateway *networkingv1alpha1.Gateway,
+	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute) error {
+	var backendGroup k8sgatewayapiv1alpha2.Group = ""
+	var backendKind k8sgatewayapiv1alpha2.Kind = "Service"
+	var backendWeight int32 = 1
+	var port = constants.DefaultFunctionServicePort
+	var namespace = k8sgatewayapiv1alpha2.Namespace(fn.Namespace)
+	var filter = k8sgatewayapiv1alpha2.HTTPRouteFilter{
+		Type: k8sgatewayapiv1alpha2.HTTPRouteFilterRequestHeaderModifier,
+		RequestHeaderModifier: &k8sgatewayapiv1alpha2.HTTPRequestHeaderFilter{
+			Add: []k8sgatewayapiv1alpha2.HTTPHeader{{
+				Name:  "Host",
+				Value: fmt.Sprintf("%s.%s.svc.%s", knativeService.Status.LatestReadyRevisionName, fn.Namespace, gateway.Spec.ClusterDomain),
+			}},
+		},
+	}
+	var backendRefs = []k8sgatewayapiv1alpha2.HTTPBackendRef{{
+		BackendRef: k8sgatewayapiv1alpha2.BackendRef{
+			BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
+				Group:     &backendGroup,
+				Kind:      &backendKind,
+				Name:      k8sgatewayapiv1alpha2.ObjectName(knativeService.Status.LatestReadyRevisionName),
+				Namespace: &namespace,
+				Port:      &port,
+			},
+			Weight: &backendWeight,
+		}}}
+
+	// generate Path-Based Rule
+	var pathBuffer bytes.Buffer
+	var path string
+	pathTemplate := template.Must(template.New("path").Parse(gateway.Spec.PathTemplate))
+	pathInfoObj := struct {
+		Name      string
+		Namespace string
+	}{Name: fn.Name, Namespace: fn.Namespace}
+	if err := pathTemplate.Execute(&pathBuffer, pathInfoObj); err != nil {
+		return err
+	}
+	path = pathBuffer.String()
+	if !strings.HasSuffix(path, "/") {
+		path = fmt.Sprintf("/%s", path)
+	}
+	pathMatchType := k8sgatewayapiv1alpha2.PathMatchPathPrefix
+	pathBasedRule := k8sgatewayapiv1alpha2.HTTPRouteRule{
+		Matches: []k8sgatewayapiv1alpha2.HTTPRouteMatch{{Path: &k8sgatewayapiv1alpha2.HTTPPathMatch{Type: &pathMatchType, Value: &path}}},
+		Filters: []k8sgatewayapiv1alpha2.HTTPRouteFilter{filter},
+	}
+	httpRoute.Spec.Rules = append(httpRoute.Spec.Rules, pathBasedRule)
+
+	// generate Host-Based Rule
+	var hostnameBuffer bytes.Buffer
+	hostTemplate := template.Must(template.New("host").Parse(gateway.Spec.HostTemplate))
+	hostInfoObj := struct {
+		Name      string
+		Namespace string
+		Domain    string
+	}{Name: fn.Name, Namespace: fn.Namespace, Domain: gateway.Spec.Domain}
+	if err := hostTemplate.Execute(&hostnameBuffer, hostInfoObj); err != nil {
+		return err
+	}
+	internalName := fmt.Sprintf("%s.%s.svc.%s", fn.Name, fn.Namespace, gateway.Spec.ClusterDomain)
+	externalName := hostnameBuffer.String()
+	externalNamedIP := fmt.Sprintf(`^%s\.(((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\\.|$)){4})\.%s`, externalName, MagicDNS)
+	headerName := k8sgatewayapiv1alpha2.HTTPHeaderName("Host")
+	regexMatchType := k8sgatewayapiv1alpha2.HeaderMatchRegularExpression
+	headers := []k8sgatewayapiv1alpha2.HTTPHeaderMatch{
+		{Name: headerName, Value: internalName},
+		{Name: headerName, Value: externalName},
+		{Type: &regexMatchType, Name: headerName, Value: externalNamedIP},
+	}
+	for _, hostname := range fn.Spec.Route.Hostnames {
+		headers = append(headers, k8sgatewayapiv1alpha2.HTTPHeaderMatch{
+			Name: headerName, Value: string(hostname)})
+	}
+	if fn.Spec.Route.Rules != nil {
+		for _, rule := range fn.Spec.Route.Rules {
+			for _, match := range rule.Matches {
+				match.Headers = append(match.Headers, headers...)
+			}
+			rule.BackendRefs = backendRefs
+			rule.Filters = append(rule.Filters, filter)
+			httpRoute.Spec.Rules = append(httpRoute.Spec.Rules, rule)
+		}
+	} else {
+		rule := k8sgatewayapiv1alpha2.HTTPRouteRule{
+			Matches:     []k8sgatewayapiv1alpha2.HTTPRouteMatch{{Headers: headers}},
+			BackendRefs: backendRefs,
+			Filters:     []k8sgatewayapiv1alpha2.HTTPRouteFilter{filter},
+		}
+		httpRoute.Spec.Rules = append(httpRoute.Spec.Rules, rule)
+	}
+
+	return nil
+}
+
 func (r *FunctionReconciler) mutateHTTPRoute(
 	fn *openfunction.Function,
 	knativeService *kservingv1.Service,
 	gateway *networkingv1alpha1.Gateway,
 	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute) controllerutil.MutateFn {
 	return func() error {
-		var clusterHostname = k8sgatewayapiv1alpha2.Hostname(
-			fmt.Sprintf("%s.%s.svc.%s", fn.Name, fn.Namespace, gateway.Spec.ClusterDomain))
-		var hostnames []k8sgatewayapiv1alpha2.Hostname
-		var rules []k8sgatewayapiv1alpha2.HTTPRouteRule
-		var port = constants.DefaultFunctionServicePort
-		var namespace = k8sgatewayapiv1alpha2.Namespace(fn.Namespace)
-		var filter = k8sgatewayapiv1alpha2.HTTPRouteFilter{
-			Type: k8sgatewayapiv1alpha2.HTTPRouteFilterRequestHeaderModifier,
-			RequestHeaderModifier: &k8sgatewayapiv1alpha2.HTTPRequestHeaderFilter{
-				Add: []k8sgatewayapiv1alpha2.HTTPHeader{{
-					Name:  "Host",
-					Value: fmt.Sprintf("%s.%s.svc.%s", knativeService.Status.LatestReadyRevisionName, fn.Namespace, gateway.Spec.ClusterDomain),
-				}},
-			},
-		}
 		var parentRefName k8sgatewayapiv1alpha2.ObjectName
 		var parentRefNamespace k8sgatewayapiv1alpha2.Namespace
 		if gateway.Spec.GatewayRef != nil {
@@ -760,88 +847,6 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 			parentRefNamespace = k8sgatewayapiv1alpha2.Namespace(gateway.Spec.GatewayDef.Namespace)
 		}
 
-		if fn.Spec.Route.Hostnames == nil {
-			var hostnameBuffer bytes.Buffer
-
-			hostTemplate := template.Must(template.New("host").Parse(gateway.Spec.HostTemplate))
-			hostInfoObj := struct {
-				Name      string
-				Namespace string
-				Domain    string
-			}{Name: fn.Name, Namespace: fn.Namespace, Domain: gateway.Spec.Domain}
-			if err := hostTemplate.Execute(&hostnameBuffer, hostInfoObj); err != nil {
-				return err
-			}
-			hostname := k8sgatewayapiv1alpha2.Hostname(hostnameBuffer.String())
-			hostnames = append(hostnames, hostname)
-		} else {
-			hostnames = fn.Spec.Route.Hostnames
-		}
-		if !containsHTTPHostname(fn.Spec.Route.Hostnames, clusterHostname) {
-			hostnames = append(hostnames, clusterHostname)
-		}
-
-		var backendGroup k8sgatewayapiv1alpha2.Group = ""
-		var backendKind k8sgatewayapiv1alpha2.Kind = "Service"
-		var backendWeight int32 = 1
-		if fn.Spec.Route.Rules == nil {
-			var path string
-			if fn.Spec.Route.Hostnames == nil {
-				path = "/"
-			} else {
-				var pathBuffer bytes.Buffer
-				pathTemplate := template.Must(template.New("path").Parse(gateway.Spec.PathTemplate))
-				pathInfoObj := struct {
-					Name      string
-					Namespace string
-				}{Name: fn.Name, Namespace: fn.Namespace}
-				if err := pathTemplate.Execute(&pathBuffer, pathInfoObj); err != nil {
-					return err
-				}
-				path = pathBuffer.String()
-				if !strings.HasSuffix(path, "/") {
-					path = fmt.Sprintf("/%s", path)
-				}
-			}
-			matchType := k8sgatewayapiv1alpha2.PathMatchPathPrefix
-			rule := k8sgatewayapiv1alpha2.HTTPRouteRule{
-				Matches: []k8sgatewayapiv1alpha2.HTTPRouteMatch{{
-					Path: &k8sgatewayapiv1alpha2.HTTPPathMatch{Type: &matchType, Value: &path},
-				}},
-				BackendRefs: []k8sgatewayapiv1alpha2.HTTPBackendRef{
-					{
-						BackendRef: k8sgatewayapiv1alpha2.BackendRef{
-							BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
-								Group:     &backendGroup,
-								Kind:      &backendKind,
-								Name:      k8sgatewayapiv1alpha2.ObjectName(knativeService.Status.LatestReadyRevisionName),
-								Namespace: &namespace,
-								Port:      &port,
-							},
-							Weight: &backendWeight,
-						},
-					},
-				},
-				Filters: []k8sgatewayapiv1alpha2.HTTPRouteFilter{filter},
-			}
-			rules = append(rules, rule)
-		} else {
-			for _, rule := range fn.Spec.Route.Rules {
-				rule.BackendRefs = []k8sgatewayapiv1alpha2.HTTPBackendRef{{
-					BackendRef: k8sgatewayapiv1alpha2.BackendRef{
-						BackendObjectReference: k8sgatewayapiv1alpha2.BackendObjectReference{
-							Group:     &backendGroup,
-							Kind:      &backendKind,
-							Name:      k8sgatewayapiv1alpha2.ObjectName(knativeService.Status.LatestReadyRevisionName),
-							Namespace: &namespace,
-							Port:      &port,
-						},
-						Weight: &backendWeight,
-					}}}
-				rule.Filters = append(rule.Filters, filter)
-				rules = append(rules, rule)
-			}
-		}
 		httpRouteLabelValue := fmt.Sprintf("%s.%s", gateway.Namespace, gateway.Name)
 		if httpRoute.Labels == nil {
 			httpRoute.Labels = map[string]string{gateway.Spec.HttpRouteLabelKey: httpRouteLabelValue}
@@ -858,8 +863,9 @@ func (r *FunctionReconciler) mutateHTTPRoute(
 				Name:      parentRefName,
 			},
 		}
-		httpRoute.Spec.Hostnames = hostnames
-		httpRoute.Spec.Rules = rules
+		if err := r.generateHTTPRouteRules(fn, knativeService, gateway, httpRoute); err != nil {
+			return err
+		}
 		return ctrl.SetControllerReference(fn, httpRoute, r.Scheme)
 	}
 }
@@ -898,6 +904,7 @@ func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
 	httpRoute *k8sgatewayapiv1alpha2.HTTPRoute) error {
 	log := r.Log.WithName("updateFuncWithHTTPRouteStatus")
 	var addresses []openfunction.FunctionAddress
+	var hosts []k8sgatewayapiv1alpha2.Hostname
 	var paths []k8sgatewayapiv1alpha2.HTTPPathMatch
 	var oldRouteStatus = fn.Status.Route.DeepCopy()
 	if fn.Status.Route == nil {
@@ -906,33 +913,67 @@ func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
 	if len(httpRoute.Status.RouteStatus.Parents) != 0 {
 		fn.Status.Route.Conditions = httpRoute.Status.Parents[0].Conditions
 	}
-	fn.Status.Route.Hosts = httpRoute.Spec.Hostnames
+
+	externalDomain := ""
+	cm := &corev1.ConfigMap{}
+	if err := r.Client.Get(r.ctx, client.ObjectKey{
+		Namespace: constants.DefaultControllerNamespace,
+		Name:      constants.DefaultConfigMapName,
+	}, cm); err == nil {
+		if cm != nil {
+			externalDomain = cm.Data["external-domain"]
+		}
+	}
+
+	if externalDomain == "" {
+		var nodes corev1.NodeList
+		labelSelector, _ := labels.Parse("! node.kubernetes.io/exclude-from-external-load-balancers")
+		if err := r.List(r.ctx, &nodes, &client.ListOptions{LabelSelector: labelSelector}); err != nil {
+			return err
+		}
+		if len(nodes.Items) == 0 {
+			err := errors.New(string(metav1.StatusReasonNotFound))
+			log.Error(err, "Failed to get available Node ip")
+			return err
+		}
+		for _, address := range nodes.Items[0].Status.Addresses {
+			if address.Type == corev1.NodeInternalIP {
+				externalDomain = fmt.Sprintf("%s.%s", address.Address, MagicDNS)
+			}
+		}
+	}
+
+	var addressType openfunction.AddressType
 	for _, httpRule := range httpRoute.Spec.Rules {
 		for _, match := range httpRule.Matches {
+			for _, header := range match.Headers {
+				if strings.HasSuffix(header.Value, gateway.Spec.ClusterDomain) {
+					addressType = openfunction.InternalAddressType
+
+				} else if strings.HasSuffix(header.Value, externalDomain) {
+					addressType = openfunction.ExternalAddressType
+				}
+				if addressType != "" {
+					addressValue := url.URL{
+						Scheme: "http",
+						Host:   header.Value,
+						Path:   *match.Path.Value,
+					}
+					address := openfunction.FunctionAddress{
+						Type:  &addressType,
+						Value: addressValue.String(),
+					}
+					addresses = append(addresses, address)
+				}
+				if *header.Type == k8sgatewayapiv1alpha2.HeaderMatchExact {
+					hosts = append(hosts, k8sgatewayapiv1alpha2.Hostname(header.Value))
+				}
+			}
 			paths = append(paths, *match.Path)
 		}
 	}
 	fn.Status.Route.Paths = paths
-	for _, hostname := range httpRoute.Spec.Hostnames {
-		var addressType openfunction.AddressType
-		if strings.HasSuffix(string(hostname), gateway.Spec.ClusterDomain) {
-			addressType = openfunction.InternalAddressType
-		} else {
-			addressType = openfunction.ExternalAddressType
-		}
-		for _, path := range paths {
-			addressValue := url.URL{
-				Scheme: "http",
-				Host:   string(hostname),
-				Path:   *path.Value,
-			}
-			address := openfunction.FunctionAddress{
-				Type:  &addressType,
-				Value: addressValue.String(),
-			}
-			addresses = append(addresses, address)
-		}
-	}
+	fn.Status.Route.Hosts = hosts
 	fn.Status.Addresses = addresses
 	if !equality.Semantic.DeepEqual(oldRouteStatus, fn.Status.Route.DeepCopy()) {
 		if err := r.Status().Update(r.ctx, fn); err != nil {
@@ -944,15 +985,6 @@ func (r *FunctionReconciler) updateFuncWithHTTPRouteStatus(
 		}
 	}
 	return nil
-}
-
-func containsHTTPHostname(hostnames []k8sgatewayapiv1alpha2.Hostname, hostname k8sgatewayapiv1alpha2.Hostname) bool {
-	for _, item := range hostnames {
-		if item == hostname {
-			return true
-		}
-	}
-	return false
 }
 
 func (r *FunctionReconciler) startFunctionWatcher() {

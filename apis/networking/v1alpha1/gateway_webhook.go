@@ -18,7 +18,6 @@ package v1alpha1
 
 import (
 	"bytes"
-	"fmt"
 	"text/template"
 
 	"k8s.io/apimachinery/pkg/util/json"
@@ -60,9 +59,8 @@ func (r *Gateway) Default() {
 	for index, listener := range r.Spec.GatewaySpec.Listeners {
 		if listener.Name == DefaultHttpListenerName {
 			needInjectDefaultListeners = false
-			internalHostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*.%s", r.Spec.ClusterDomain))
 			namespaceFromAll := k8sgatewayapiv1alpha2.NamespacesFromAll
-			listener.Hostname = &internalHostname
+			listener.Hostname = nil
 			listener.Port = constants.DefaultGatewayListenerPort
 			listener.Protocol = constants.DefaultGatewayListenerProtocol
 			listener.AllowedRoutes = &k8sgatewayapiv1alpha2.AllowedRoutes{
@@ -70,19 +68,14 @@ func (r *Gateway) Default() {
 					From: &namespaceFromAll,
 				},
 			}
-		} else {
-			hostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*.%s", r.Spec.Domain))
-			listener.Hostname = &hostname
 		}
 		r.Spec.GatewaySpec.Listeners[index] = listener
 	}
 
 	if needInjectDefaultListeners {
-		internalHostname := k8sgatewayapiv1alpha2.Hostname(fmt.Sprintf("*.%s", r.Spec.ClusterDomain))
 		namespaceFromAll := k8sgatewayapiv1alpha2.NamespacesFromAll
 		internalHttpListener := k8sgatewayapiv1alpha2.Listener{
 			Name:     DefaultHttpListenerName,
-			Hostname: &internalHostname,
 			Port:     constants.DefaultGatewayListenerPort,
 			Protocol: constants.DefaultGatewayListenerProtocol,
 			AllowedRoutes: &k8sgatewayapiv1alpha2.AllowedRoutes{
